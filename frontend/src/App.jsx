@@ -1402,6 +1402,7 @@ export default function App() {
       ) : null}
 
       {uiMode === "pro" ? (
+      <>
       <div className="shell-grid">
 
         {layoutState.sidebar ? (
@@ -1724,6 +1725,7 @@ export default function App() {
       <div className="footer-note">
         Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
       </div>
+      </>
       ) : null}
     </div>
   );
