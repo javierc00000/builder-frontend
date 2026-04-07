@@ -715,8 +715,8 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
     layout.mode === "dashboard"
       ? "Builder Dashboard"
       : layout.mode === "focus"
-        ? "Focused Canvas"
-        : "Workspace Preview";
+      ? "Focused Canvas"
+      : "Workspace Preview";
 
   if (layout.previewStyle === "dashboard") {
     return (
@@ -811,7 +811,6 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
   );
 }
 
-
 export default function App() {
   const [prompt, setPrompt] = useState(() => loadFromStorage(STORAGE_KEYS.prompt, ""));
   const [activeModules, setActiveModules] = useState(() => {
@@ -862,7 +861,6 @@ export default function App() {
   });
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
-
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -961,13 +959,6 @@ export default function App() {
     setStatusMessage("Preparing your first builder version...");
   }
 
-  function runBuilderSequence(commandText, applyCommand) {
-    const commandLabel = String(commandText || "").trim();
-    setStatusMessage(commandLabel ? `Running: ${commandLabel}` : "Running builder command...");
-    applyCommand();
-  }
-
-
   function runNextBestAction(action) {
     if (!action) return;
     if (action.cmd === "run-planner") {
@@ -975,7 +966,7 @@ export default function App() {
       return;
     }
     setPrompt(action.cmd);
-    runBuilderSequence(action.cmd, () => runBuilderBrain(action.cmd));
+    runBuilderBrain(action.cmd);
     setSimpleFlowStep("builder");
   }
 
@@ -1147,11 +1138,6 @@ export default function App() {
     }
   }
 
-  function addAppliancePreset() {
-    const nextPreset = APPLIANCE_PRESETS[appliances.length % APPLIANCE_PRESETS.length];
-    addApplianceRow(nextPreset);
-  }
-
   function addApplianceRow(prefill) {
     setAppliances((prev) => [
       ...prev,
@@ -1169,9 +1155,9 @@ export default function App() {
       prev.map((item) =>
         item.id === id
           ? {
-            ...item,
-            [field]: field === "name" ? value : Number(value),
-          }
+              ...item,
+              [field]: field === "name" ? value : Number(value),
+            }
           : item,
       ),
     );
@@ -1242,7 +1228,6 @@ export default function App() {
     setActiveModules([...DEFAULT_MODULES]);
     setFeatureState({ ...DEFAULT_FEATURE_STATE });
     setResult(null);
-    setRunState({ stage: "idle", command: "", detail: "Ready for the next command." });
     setBuilderInsight("Builder reset to default state.");
     setStatusMessage("Workspace reset complete.");
     appendMutationLog({
@@ -1616,14 +1601,6 @@ export default function App() {
         .preview-dashboard, .preview-spotlight, .wireframe-shell {
           overflow: hidden;
         }
-        .simple-mode-grid,
-        .simple-builder-grid,
-        .simple-action-grid,
-        .spot-grid {
-          position: relative;
-          z-index: 1;
-        }
-
 
         .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
@@ -1651,7 +1628,7 @@ export default function App() {
         <div className="brand">
           <span className="eyebrow">Personal AI Builder</span>
           <h1>Real Builder Workspace</h1>
-          <p>Features mutate behavior. Commands now mutate the actual layout too. <strong style={{ color: "var(--accent)" }}>Scroll Fix v2</strong></p>
+          <p>Features mutate behavior. Commands now mutate the actual layout too.</p>
         </div>
         <div className="topbar-actions">
           <div className="mode-toggle">
@@ -1663,7 +1640,7 @@ export default function App() {
           </span>
           <span className="badge">Layout: {getLayoutLabel(layoutState)}</span>
           <span className="badge">Modules: {activeModules.length}</span>
-          <button className="pill primary" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain())}>
+          <button className="pill primary" onClick={() => runBuilderBrain()}>
             Run Builder Brain
           </button>
           <button className="ghost-pill" onClick={resetBuilder}>
@@ -1818,10 +1795,10 @@ export default function App() {
                       selectedSimpleStarter.key === "dashboard"
                         ? "admin panel"
                         : selectedSimpleStarter.key === "assistant"
-                          ? "assistant app"
-                          : selectedSimpleStarter.key === "content"
-                            ? "content app"
-                            : "tool app",
+                        ? "assistant app"
+                        : selectedSimpleStarter.key === "content"
+                        ? "content app"
+                        : "tool app",
                   }}
                   result={result}
                   prompt={buildSimpleStarterPrompt(simpleDraft)}
@@ -1850,8 +1827,8 @@ export default function App() {
                           {index === 0
                             ? selectedSimpleStarter.label
                             : index === 1
-                              ? getLayoutLabel(layoutState)
-                              : "Simple mode is preparing the first real builder view."}
+                            ? getLayoutLabel(layoutState)
+                            : "Simple mode is preparing the first real builder view."}
                         </div>
                       </div>
                     </div>
@@ -1878,10 +1855,10 @@ export default function App() {
 
           {simpleFlowStep === "builder" ? (
             <>
-              <div style={{ display: "grid", gap: 18 }}>
+              <div className="simple-builder-grid">
                 <Panel
-                  title="Simple Builder · Scroll Fix v2"
-                  subtitle="One command, one guided next step, one preview. No floating status layer."
+                  title="Simple Builder"
+                  subtitle="Now you are inside the real builder experience, but still guided."
                   collapsible={false}
                 >
                   <div className="builder-form" style={{ gap: 14 }}>
@@ -1889,7 +1866,6 @@ export default function App() {
                       <strong>Guided command bar</strong>
                       <span className="tag">Simple</span>
                     </div>
-
                     <div className="command-row">
                       <input
                         className="text-input"
@@ -1898,11 +1874,11 @@ export default function App() {
                         placeholder="make dashboard"
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
-                            runBuilderSequence(prompt, () => runBuilderBrain());
+                            runBuilderBrain();
                           }
                         }}
                       />
-                      <button className="pill primary" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain())}>
+                      <button className="pill primary" onClick={() => runBuilderBrain()}>
                         Run Builder Brain
                       </button>
                       <button className="ghost-pill" onClick={() => setUiMode("pro")}>
@@ -1913,37 +1889,67 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="result-box">
-                      <strong>Current command</strong>
-                      <div className="muted" style={{ marginTop: 6 }}>
-                        {prompt ? prompt : "Run a command and the builder will update the workspace."}
+                    <div className="simple-action-grid">
+                      <div className="result-box">
+                        <strong>Next best action</strong>
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          {builderInsight}
+                        </div>
+                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
+                          {nextBestActions.map((action) => (
+                            <button
+                              key={action.key}
+                              className="simple-action-chip"
+                              onClick={() => runNextBestAction(action)}
+                            >
+                              <strong>{action.label}</strong>
+                              <span>{action.reason}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="result-box">
-                      <strong>Builder status</strong>
-                      <div className="muted" style={{ marginTop: 6 }}>{statusMessage}</div>
-                      <div className="muted" style={{ marginTop: 10 }}>{builderInsight}</div>
-                    </div>
-
-                    <div className="simple-chip-grid">
-                      {nextBestActions.map((action) => (
-                        <button
-                          key={action.key}
-                          className="simple-action-chip"
-                          onClick={() => runNextBestAction(action)}
-                        >
-                          <strong>{action.label}</strong>
-                          <span>{action.reason}</span>
-                        </button>
-                      ))}
+                      <div className="result-box">
+                        <strong>Quick starters</strong>
+                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
+                          {[
+                            {
+                              label: "Build Dashboard",
+                              hint: "Start with a cleaner dashboard shell.",
+                              cmd: "make dashboard",
+                            },
+                            {
+                              label: "Create Dev Workspace",
+                              hint: "Open a mini IDE-style builder workspace.",
+                              cmd: "make dev workspace",
+                            },
+                            {
+                              label: "Make SaaS Landing",
+                              hint: "Create a landing-style workspace with stronger preview focus.",
+                              cmd: "make saas landing",
+                            },
+                          ].map((card) => (
+                            <button
+                              key={card.cmd}
+                              className="simple-action-chip"
+                              onClick={() => {
+                                setPrompt(card.cmd);
+                                runBuilderBrain(card.cmd);
+                              }}
+                            >
+                              <strong>{card.label}</strong>
+                              <span>{card.hint}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </Panel>
 
                 <Panel
                   title="Live Preview"
-                  subtitle="Preview stays in the normal document flow."
+                  subtitle="The builder should feel like an app, not just loose blocks."
                   collapsible={false}
                 >
                   <PreviewCanvas
@@ -1954,34 +1960,12 @@ export default function App() {
                     prompt={prompt}
                   />
                 </Panel>
-
-                <Panel title="Quick starters" subtitle="Use one of these to mutate the workspace fast." compact>
-                  <div className="quick-grid">
-                    {[
-                      { label: "Make dashboard", cmd: "make dashboard" },
-                      { label: "Make dev workspace", cmd: "make dev workspace" },
-                      { label: "Make SaaS landing", cmd: "make saas landing" },
-                      { label: "Materialize files", cmd: "materialize files" },
-                      { label: "Regenerate routes", cmd: "regenerate routes" },
-                    ].map((card) => (
-                      <button
-                        key={card.cmd}
-                        className="tab-btn"
-                        onClick={() => {
-                          setPrompt(card.cmd);
-                          runBuilderSequence(card.cmd, () => runBuilderBrain(card.cmd));
-                        }}
-                      >
-                        {card.label}
-                      </button>
-                    ))}
-                  </div>
-                </Panel>
               </div>
 
               <div className="spot-grid">
                 <Panel title="Status" subtitle="Keep only the essentials visible." compact>
-                  <div className="status-grid">
+                  <div className="result-box">{builderInsight}</div>
+                  <div className="status-grid" style={{ marginTop: 14 }}>
                     <StatCard label="API" value={apiStatus} hint={statusMessage} />
                     <StatCard label="Layout" value={getLayoutLabel(layoutState)} hint="Current workspace shell" accent="var(--warning)" />
                     <StatCard label="Modules" value={activeModules.length} hint={featureState.appType} accent="var(--accent-2)" />
@@ -2044,332 +2028,330 @@ export default function App() {
       ) : null}
 
       {uiMode === "pro" ? (
-        <>
-          <div className="shell-grid">
+      <>
+      <div className="shell-grid">
 
-            {layoutState.sidebar ? (
-              <aside className="sidebar">
-                <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
-                  <div className="sidebar-nav">
-                    {sidebarItems.map((item) => (
-                      <button
-                        key={item.key}
-                        className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
-                        onClick={() => setSelectedSidebarView(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+        {layoutState.sidebar ? (
+          <aside className="sidebar">
+            <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
+              <div className="sidebar-nav">
+                {sidebarItems.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
+                    onClick={() => setSelectedSidebarView(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+            <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Shell</strong>
+                    <span className="tag">{layoutState.shell}</span>
                   </div>
-                </Panel>
-                <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Shell</strong>
-                        <span className="tag">{layoutState.shell}</span>
-                      </div>
-                      <div className="muted">Mode: {layoutState.mode}</div>
-                    </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Split</strong>
-                        <span className="tag">{layoutState.split ? "On" : "Off"}</span>
-                      </div>
-                      <div className="muted">Preview style: {layoutState.previewStyle}</div>
-                    </div>
+                  <div className="muted">Mode: {layoutState.mode}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Split</strong>
+                    <span className="tag">{layoutState.split ? "On" : "Off"}</span>
                   </div>
-                </Panel>
-              </aside>
+                  <div className="muted">Preview style: {layoutState.previewStyle}</div>
+                </div>
+              </div>
+            </Panel>
+          </aside>
+        ) : null}
+
+        <main className="main-workspace">
+          <div className="stack">
+            <Panel
+              title="Builder Brain"
+              subtitle="Detects app type, builder mode, summary style, and recommended modules"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
+                </>
+              }
+            >
+              <div className="brain-grid">
+                <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
+                <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
+                <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <textarea
+                className="prompt-box"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
+              />
+              <div style={{ height: 12 }} />
+              <div className="command-row">
+                {QUICK_COMMANDS.map((item) => (
+                  <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="result-box">{builderInsight}</div>
+            </Panel>
+
+            <Panel
+              title="Command Mutations"
+              subtitle="This now mutates modules and the workspace shell"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
+                  <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
+                </>
+              }
+            >
+              <div className="status-grid">
+                <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
+                <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
+                <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Latest status</strong>
+                    <span className="tag">Live</span>
+                  </div>
+                  <div className="muted">{statusMessage}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Workspace shape</strong>
+                    <span className="tag">{getLayoutLabel(layoutState)}</span>
+                  </div>
+                  <div className="muted">Use natural commands to reshape the app shell.</div>
+                </div>
+              </div>
+            </Panel>
+
+            {activeModules.includes("quick_actions") ? (
+              <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
+                <div className="quick-grid">
+                  <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
+                  <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
+                  <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
+                  <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
+                </div>
+              </Panel>
             ) : null}
 
-            <main className="main-workspace">
-              <div className="stack">
-                <Panel
-                  title="Builder Brain"
-                  subtitle="Detects app type, builder mode, summary style, and recommended modules"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain(prompt))}>Analyze prompt</button>
-                      <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => handleMutationCommand(prompt))}>Apply mutation</button>
-                    </>
-                  }
-                >
-                  <div className="brain-grid">
-                    <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
-                    <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
-                    <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <textarea
-                    className="prompt-box"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
-                  />
-                  <div style={{ height: 12 }} />
-                  <div className="command-row">
-                    {QUICK_COMMANDS.map((item) => (
-                      <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{builderInsight}</div>
-                  <div style={{ height: 14 }} />
-
-                </Panel>
-
-                <Panel
-                  title="Command Mutations"
-                  subtitle="This now mutates modules and the workspace shell"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => handleMutationCommand(prompt))}>Apply current command</button>
-                      <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
-                    </>
-                  }
-                >
-                  <div className="status-grid">
-                    <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
-                    <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
-                    <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Latest status</strong>
-                        <span className="tag">Live</span>
-                      </div>
-                      <div className="muted">{statusMessage}</div>
+            <Panel
+              title="Battery Planner Builder"
+              subtitle="Your backend is still connected. This stays as a real functional module."
+              actions={
+                <>
+                  <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
+                    {isLoading ? "Running..." : "Run /battery-plan"}
+                  </button>
+                  <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
+                </>
+              }
+            >
+              <div className="builder-form">
+                <div className="appliance-table">
+                  {appliances.map((item) => (
+                    <div key={item.id} className="appliance-row">
+                      <input
+                        className="text-input"
+                        value={item.name}
+                        onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
+                        placeholder="Appliance"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.watts}
+                        onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
+                        placeholder="Watts"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.hours}
+                        onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
+                        placeholder="Hours"
+                      />
+                      <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
                     </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Workspace shape</strong>
-                        <span className="tag">{getLayoutLabel(layoutState)}</span>
-                      </div>
-                      <div className="muted">Use natural commands to reshape the app shell.</div>
-                    </div>
-                  </div>
-                </Panel>
-
-                {activeModules.includes("quick_actions") ? (
-                  <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
-                    <div className="quick-grid">
-                      <button className="pill" onClick={() => runBuilderSequence("make dashboard", () => handleMutationCommand("make dashboard"))}>Make dashboard</button>
-                      <button className="pill" onClick={() => runBuilderSequence("add sidebar", () => handleMutationCommand("add sidebar"))}>Add sidebar</button>
-                      <button className="pill" onClick={() => runBuilderSequence("split layout", () => handleMutationCommand("split layout"))}>Split layout</button>
-                      <button className="pill" onClick={() => runBuilderSequence("add inspector", () => handleMutationCommand("add inspector"))}>Add inspector</button>
-                      <button className="pill" onClick={() => runBuilderSequence("focus preview", () => handleMutationCommand("focus preview"))}>Focus preview</button>
-                      <button className="pill" onClick={() => runBuilderSequence("return to classic layout", () => handleMutationCommand("return to classic layout"))}>Classic layout</button>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel
-                  title="Battery Planner Builder"
-                  subtitle="Your backend is still connected. This stays as a real functional module."
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
-                        {isLoading ? "Running..." : "Run /battery-plan"}
-                      </button>
-                      <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
-                    </>
-                  }
-                >
-                  <div className="builder-form">
-                    <div className="appliance-table">
-                      {appliances.map((item) => (
-                        <div key={item.id} className="appliance-row">
-                          <input
-                            className="text-input"
-                            value={item.name}
-                            onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
-                            placeholder="Appliance"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.watts}
-                            onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
-                            placeholder="Watts"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.hours}
-                            onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
-                            placeholder="Hours"
-                          />
-                          <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="appliance-presets">
-                      {APPLIANCE_PRESETS.map((preset) => (
-                        <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
-                          + {preset.name}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="result-grid">
-                      <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
-                      <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
-                      <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
-                      <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
-                    </div>
-                  </div>
-                </Panel>
-
-                <Panel
-                  title="Results Summary"
-                  subtitle="Saved results, export, and summary stay active while layout mutates"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
-                      <button className="mini-btn" onClick={exportReport}>Export report</button>
-                    </>
-                  }
-                >
-                  <div className="result-grid">
-                    <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
-                    <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
-                    <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
-                    <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{computedSummary}</div>
-                  <div style={{ height: 14 }} />
-                  <div className="saved-grid">
-                    {savedResults.slice(0, 4).map((item) => (
-                      <div key={item.id} className="saved-card">
-                        <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
-                        <div className="muted">{item.time}</div>
-                        <div className="muted">{item.summary}</div>
-                        <div className="tag">{getLayoutLabel(item.layout)}</div>
-                      </div>
-                    ))}
-                    {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
-                  </div>
-                </Panel>
+                  ))}
+                </div>
+                <div className="appliance-presets">
+                  {APPLIANCE_PRESETS.map((preset) => (
+                    <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
+                      + {preset.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="result-grid">
+                  <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
+                  <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
+                  <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
+                  <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
+                </div>
               </div>
+            </Panel>
 
-              <div className="stack">
-                {activeModules.includes("live_preview") ? (
-                  <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
-                    <PreviewCanvas
-                      layout={layoutState}
-                      activeModules={activeModules}
-                      featureState={featureState}
-                      result={result}
-                      prompt={prompt}
-                    />
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("active_features_panel") ? (
-                  <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
-                    <div className="module-list">
-                      {activeModuleMeta.map((module) => (
-                        <div key={module.key} className="module-item">
-                          <div className="module-top">
-                            <strong>{module.label}</strong>
-                            <span className="tag">{module.category}</span>
-                          </div>
-                          <div className="muted">{module.description}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("status_panel") ? (
-                  <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
-                    <div className="module-list">
-                      <div className="module-item">
-                        <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
-                        <div className="muted">{statusText}</div>
-                      </div>
-                      <div className="module-item">
-                        <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
-                        <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
-                      </div>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
-                  <div className="mutation-list">
-                    {mutationLog.slice(0, 10).map((item) => (
-                      <div key={item.id} className="mutation-item">
-                        <div className="mutation-top">
-                          <strong>{item.type}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div>{item.command}</div>
-                        <div className="muted">{item.details}</div>
-                      </div>
-                    ))}
-                    {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
-                  </div>
-                </Panel>
+            <Panel
+              title="Results Summary"
+              subtitle="Saved results, export, and summary stay active while layout mutates"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
+                  <button className="mini-btn" onClick={exportReport}>Export report</button>
+                </>
+              }
+            >
+              <div className="result-grid">
+                <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
+                <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
+                <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
+                <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
               </div>
-            </main>
-
-            {layoutState.inspector ? (
-              <aside className="stack">
-                <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
-                  <div className="history-list">
-                    {commandHistory.slice(0, 5).map((item) => (
-                      <div key={item.id} className="history-item">
-                        <div className="history-top">
-                          <strong>{item.prompt}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div className="muted">{item.appType} · {item.builderMode}</div>
-                      </div>
-                    ))}
-                    {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
+              <div style={{ height: 14 }} />
+              <div className="result-box">{computedSummary}</div>
+              <div style={{ height: 14 }} />
+              <div className="saved-grid">
+                {savedResults.slice(0, 4).map((item) => (
+                  <div key={item.id} className="saved-card">
+                    <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
+                    <div className="muted">{item.time}</div>
+                    <div className="muted">{item.summary}</div>
+                    <div className="tag">{getLayoutLabel(item.layout)}</div>
                   </div>
-                </Panel>
+                ))}
+                {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
+              </div>
+            </Panel>
+          </div>
 
-                {activeModules.includes("affiliate_suggestions") ? (
-                  <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
-                    <div className="affiliate-list">
-                      {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
-                        <div key={item.title} className="affiliate-item">
-                          <div className="affiliate-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">smart fit</span>
-                          </div>
-                          <div className="muted">{item.fit}</div>
-                        </div>
-                      )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
-                    </div>
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("notes_panel") ? (
-                  <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
-                    <textarea
-                      className="notes-box"
-                      value={featureState.notes}
-                      onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
-                    />
-                  </Panel>
-                ) : null}
-              </aside>
+          <div className="stack">
+            {activeModules.includes("live_preview") ? (
+              <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
+                <PreviewCanvas
+                  layout={layoutState}
+                  activeModules={activeModules}
+                  featureState={featureState}
+                  result={result}
+                  prompt={prompt}
+                />
+              </Panel>
             ) : null}
-          </div>
 
-          <div className="footer-note">
-            Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
+            {activeModules.includes("active_features_panel") ? (
+              <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
+                <div className="module-list">
+                  {activeModuleMeta.map((module) => (
+                    <div key={module.key} className="module-item">
+                      <div className="module-top">
+                        <strong>{module.label}</strong>
+                        <span className="tag">{module.category}</span>
+                      </div>
+                      <div className="muted">{module.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("status_panel") ? (
+              <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
+                <div className="module-list">
+                  <div className="module-item">
+                    <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
+                    <div className="muted">{statusText}</div>
+                  </div>
+                  <div className="module-item">
+                    <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
+                    <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
+                  </div>
+                </div>
+              </Panel>
+            ) : null}
+
+            <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
+              <div className="mutation-list">
+                {mutationLog.slice(0, 10).map((item) => (
+                  <div key={item.id} className="mutation-item">
+                    <div className="mutation-top">
+                      <strong>{item.type}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div>{item.command}</div>
+                    <div className="muted">{item.details}</div>
+                  </div>
+                ))}
+                {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
+              </div>
+            </Panel>
           </div>
-        </>
+        </main>
+
+        {layoutState.inspector ? (
+          <aside className="stack">
+            <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
+              <div className="history-list">
+                {commandHistory.slice(0, 5).map((item) => (
+                  <div key={item.id} className="history-item">
+                    <div className="history-top">
+                      <strong>{item.prompt}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div className="muted">{item.appType} · {item.builderMode}</div>
+                  </div>
+                ))}
+                {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
+              </div>
+            </Panel>
+
+            {activeModules.includes("affiliate_suggestions") ? (
+              <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
+                <div className="affiliate-list">
+                  {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
+                    <div key={item.title} className="affiliate-item">
+                      <div className="affiliate-top">
+                        <strong>{item.title}</strong>
+                        <span className="tag">smart fit</span>
+                      </div>
+                      <div className="muted">{item.fit}</div>
+                    </div>
+                  )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("notes_panel") ? (
+              <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
+                <textarea
+                  className="notes-box"
+                  value={featureState.notes}
+                  onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
+                />
+              </Panel>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
+
+      <div className="footer-note">
+        Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
+      </div>
+      </>
       ) : null}
     </div>
   );
