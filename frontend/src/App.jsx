@@ -888,9 +888,103 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    return undefined;
+    if (simpleFlowStep !== "generating" || !simplePendingPrompt) return undefined;
+
+    setSimpleGenerationStage(0);
+
+    const timers = [
+      window.setTimeout(() => setSimpleGenerationStage(1), 450),
+      window.setTimeout(() => setSimpleGenerationStage(2), 900),
+      window.setTimeout(() => {
+        runBuilderBrain(simplePendingPrompt);
+        setSimpleFlowStep("builder");
+        setSimplePendingPrompt("");
+        setStatusMessage("First builder version generated.");
+      }, 1350),
+    ];
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [simpleFlowStep, simplePendingPrompt]);
 
+
+  useEffect(() => {
+    function scrubFloatingDebugBlocks() {
+      if (typeof document === "undefined") return;
+
+      const suspiciousPatterns = [
+        /Parsing\s*intent/i,
+        /Applying\s*mutations/i,
+        /Updating\s*workspace/i,
+        /Ready\s*for\s*the\s*next\s*command/i,
+        /\b1\b[\s\S]*\b2\b[\s\S]*\b3\b[\s\S]*\b4\b/i,
+      ];
+
+      const allNodes = Array.from(document.querySelectorAll("div, section, article, aside"));
+      allNodes.forEach((node) => {
+        const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+        const matchCount = suspiciousPatterns.filter((pattern) => pattern.test(text)).length;
+        if (matchCount >= 2 || (/Parsing/i.test(text) && /Updating/i.test(text) && /Ready/i.test(text))) {
+          const rect = node.getBoundingClientRect();
+          const looksLikeFloatingTimeline =
+            rect.height < 420 &&
+            rect.width > 220 &&
+            (
+              getComputedStyle(node).position === "sticky" ||
+              getComputedStyle(node).position === "fixed" ||
+              getComputedStyle(node).position === "absolute" ||
+              /translate|matrix|perspective/.test(getComputedStyle(node).transform)
+            );
+          if (looksLikeFloatingTimeline || text.length < 600) {
+            node.style.display = "none";
+            node.setAttribute("data-builder-scrubbed", "true");
+          }
+        }
+      });
+
+      const allElements = Array.from(document.querySelectorAll("*"));
+      allElements.forEach((el) => {
+        const style = getComputedStyle(el);
+        const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+        if (
+          !el.closest(".app-shell") &&
+          (/Parsing\s*intent/i.test(text) || /Applying\s*mutations/i.test(text) || /Updating\s*workspace/i.test(text))
+        ) {
+          el.remove();
+          return;
+        }
+        if (/Parsing\s*intent/i.test(text) || /Applying\s*mutations/i.test(text) || /Updating\s*workspace/i.test(text) || /Ready\s*for\s*the\s*next\s*command/i.test(text)) {
+          if (style.position === "sticky" || style.position === "fixed" || style.position === "absolute") {
+            el.style.position = "static";
+            el.style.transform = "none";
+            el.style.animation = "none";
+            el.style.top = "auto";
+            el.style.left = "auto";
+            el.style.right = "auto";
+            el.style.bottom = "auto";
+            if (el.parentElement && !el.closest(".app-shell")) {
+              el.remove();
+            }
+          }
+        }
+      });
+    }
+
+    scrubFloatingDebugBlocks();
+    const observer = new MutationObserver(() => scrubFloatingDebugBlocks());
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+    window.addEventListener("scroll", scrubFloatingDebugBlocks, { passive: true });
+    window.addEventListener("resize", scrubFloatingDebugBlocks);
+
+    const timers = [window.setTimeout(scrubFloatingDebugBlocks, 50), window.setTimeout(scrubFloatingDebugBlocks, 300), window.setTimeout(scrubFloatingDebugBlocks, 1000)];
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", scrubFloatingDebugBlocks);
+      window.removeEventListener("resize", scrubFloatingDebugBlocks);
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [uiMode, layoutState.shell]);
   const analysis = useMemo(() => analyzePrompt(prompt), [prompt]);
   const computedSummary = useMemo(
     () => computeSummary(result, featureState.summaryStyle),
@@ -938,11 +1032,10 @@ export default function App() {
   function launchSimpleBuilder() {
     const starterPrompt = buildSimpleStarterPrompt(simpleDraft);
     setPrompt(starterPrompt);
-    setSimplePendingPrompt("");
+    setSimplePendingPrompt(starterPrompt);
     setSimpleGenerationStage(0);
-    runBuilderBrain(starterPrompt);
-    setSimpleFlowStep("builder");
-    setStatusMessage("First builder version generated.");
+    setSimpleFlowStep("generating");
+    setStatusMessage("Preparing your first builder version...");
   }
 
   function runNextBestAction(action) {
@@ -1588,6 +1681,21 @@ export default function App() {
           overflow: hidden;
         }
 
+
+        [data-builder-scrubbed="true"] { display: none !important; }
+        .app-shell [style*="position: sticky"],
+        .app-shell [style*="position:fixed"],
+        .app-shell [style*="position: fixed"] {
+          position: static !important;
+          top: auto !important;
+          transform: none !important;
+          animation: none !important;
+        }
+        .app-shell {
+          transform: none !important;
+          animation: none !important;
+        }
+
         .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
           .shell-grid { grid-template-columns: 1fr; }
@@ -1638,167 +1746,378 @@ export default function App() {
 
       {uiMode === "simple" ? (
         <div className="simple-mode-grid" style={{ display: "grid", gap: 18, marginBottom: 18 }}>
-          <div className="simple-builder-grid">
+          {simpleFlowStep === "welcome" ? (
             <Panel
-              title="Simple Builder"
-              subtitle="One command, one preview, no guided overlays."
+              title="Simple Mode Onboarding"
+              subtitle="Choose what to build first. The builder will guide the rest."
               collapsible={false}
             >
-              <div className="builder-form" style={{ gap: 14 }}>
-                <div className="module-top">
-                  <strong>Command bar</strong>
-                  <span className="tag">Simple</span>
+              <div className="simple-hero">
+                <div className="simple-hero-copy">
+                  <span className="tag">Guided flow</span>
+                  <h2>What do you want to build today?</h2>
+                  <p className="muted">
+                    Start with one clear direction, generate the first version, then keep evolving it without opening the full IDE unless you want to.
+                  </p>
+                  <div className="simple-progress">
+                    <span className="simple-step active">1. Choose</span>
+                    <span className="simple-step">2. Configure</span>
+                    <span className="simple-step">3. Generate</span>
+                  </div>
                 </div>
-                <div className="command-row">
-                  <input
-                    className="text-input"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="make dashboard"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        runBuilderBrain();
-                      }
-                    }}
+
+                <div className="simple-hero-card">
+                  <div className="module-top">
+                    <strong>Current workspace</strong>
+                    <span className="tag">{featureState.appType}</span>
+                  </div>
+                  <div className="muted">
+                    {commandHistory?.[0]?.prompt
+                      ? `Last command: ${commandHistory[0].prompt}`
+                      : "No command yet. Pick a starter to get your first real builder version."}
+                  </div>
+                  <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                    <span className="zone-chip">Layout · {getLayoutLabel(layoutState)}</span>
+                    <span className="zone-chip">Modules · {activeModules.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="simple-starter-grid">
+                {SIMPLE_STARTERS.map((starter) => (
+                  <button
+                    key={starter.key}
+                    className="simple-starter-card"
+                    onClick={() => selectSimpleStarter(starter.key)}
+                  >
+                    <div className="module-top">
+                      <strong>{starter.label}</strong>
+                      <span className="tag">{starter.badge}</span>
+                    </div>
+                    <div className="muted">{starter.description}</div>
+                    <div className="zone-chip-row">
+                      <span className="zone-chip">{starter.seed}</span>
+                      <span className="zone-chip">Choose</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          ) : null}
+
+          {simpleFlowStep === "config" ? (
+            <div className="simple-builder-grid">
+              <Panel
+                title="Quick Configuration"
+                subtitle="Keep this lightweight. We only need a few signals to generate the first version."
+                collapsible={false}
+              >
+                <div className="builder-form">
+                  <div className="module-top">
+                    <strong>{selectedSimpleStarter.label}</strong>
+                    <span className="tag">{selectedSimpleStarter.badge}</span>
+                  </div>
+
+                  <div className="simple-form-grid">
+                    <label className="simple-field">
+                      <span>App name</span>
+                      <input
+                        className="text-input"
+                        value={simpleDraft.appName}
+                        onChange={(e) => updateSimpleDraft("appName", e.target.value)}
+                        placeholder="My Builder App"
+                      />
+                    </label>
+
+                    <label className="simple-field">
+                      <span>Main goal</span>
+                      <input
+                        className="text-input"
+                        value={simpleDraft.mainGoal}
+                        onChange={(e) => updateSimpleDraft("mainGoal", e.target.value)}
+                        placeholder={selectedSimpleStarter.goalPlaceholder}
+                      />
+                    </label>
+
+                    <label className="simple-field">
+                      <span>Visual style</span>
+                      <select
+                        className="text-input"
+                        value={simpleDraft.style}
+                        onChange={(e) => updateSimpleDraft("style", e.target.value)}
+                      >
+                        {SIMPLE_STYLE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="result-box">
+                    <strong>Generated prompt preview</strong>
+                    <div className="muted" style={{ marginTop: 8 }}>
+                      {buildSimpleStarterPrompt(simpleDraft)}
+                    </div>
+                  </div>
+
+                  <div className="command-row">
+                    <button className="ghost-pill" onClick={() => setSimpleFlowStep("welcome")}>
+                      Back
+                    </button>
+                    <button className="pill primary" onClick={launchSimpleBuilder}>
+                      Generate first version
+                    </button>
+                    <button className="ghost-pill" onClick={() => setUiMode("pro")}>
+                      Open Pro instead
+                    </button>
+                  </div>
+                </div>
+              </Panel>
+
+              <Panel
+                title="Starter Preview"
+                subtitle="The builder will still use your real mutation engine."
+                compact
+                defaultCollapsed={false}
+              >
+                <PreviewCanvas
+                  layout={layoutState}
+                  activeModules={activeModules}
+                  featureState={{
+                    ...featureState,
+                    appType:
+                      selectedSimpleStarter.key === "dashboard"
+                        ? "admin panel"
+                        : selectedSimpleStarter.key === "assistant"
+                        ? "assistant app"
+                        : selectedSimpleStarter.key === "content"
+                        ? "content app"
+                        : "tool app",
+                  }}
+                  result={result}
+                  prompt={buildSimpleStarterPrompt(simpleDraft)}
+                />
+              </Panel>
+            </div>
+          ) : null}
+
+          {simpleFlowStep === "generating" ? (
+            <div className="simple-builder-grid">
+              <Panel
+                title="Generating your first builder version"
+                subtitle="This is the guided handoff from onboarding into the real workspace."
+                collapsible={false}
+              >
+                <div className="simple-generation-box">
+                  {SIMPLE_GENERATION_STAGES.map((stage, index) => (
+                    <div
+                      key={stage}
+                      className={`simple-generation-step ${index <= simpleGenerationStage ? "active" : ""}`}
+                    >
+                      <span className="simple-generation-dot" />
+                      <div>
+                        <strong>{stage}</strong>
+                        <div className="muted">
+                          {index === 0
+                            ? selectedSimpleStarter.label
+                            : index === 1
+                            ? getLayoutLabel(layoutState)
+                            : "Simple mode is preparing the first real builder view."}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="result-box">
+                  <strong>Prompt being used</strong>
+                  <div className="muted" style={{ marginTop: 8 }}>{simplePendingPrompt}</div>
+                </div>
+              </Panel>
+
+              <Panel title="Preview Spotlight" subtitle="The preview keeps the app feeling real while loading." compact>
+                <PreviewCanvas
+                  layout={layoutState}
+                  activeModules={activeModules}
+                  featureState={featureState}
+                  result={result}
+                  prompt={simplePendingPrompt}
+                />
+              </Panel>
+            </div>
+          ) : null}
+
+          {simpleFlowStep === "builder" ? (
+            <>
+              <div className="simple-builder-grid">
+                <Panel
+                  title="Simple Builder"
+                  subtitle="Now you are inside the real builder experience, but still guided."
+                  collapsible={false}
+                >
+                  <div className="builder-form" style={{ gap: 14 }}>
+                    <div className="module-top">
+                      <strong>Guided command bar</strong>
+                      <span className="tag">Simple</span>
+                    </div>
+                    <div className="command-row">
+                      <input
+                        className="text-input"
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="make dashboard"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            runBuilderBrain();
+                          }
+                        }}
+                      />
+                      <button className="pill primary" onClick={() => runBuilderBrain()}>
+                        Run Builder Brain
+                      </button>
+                      <button className="ghost-pill" onClick={() => setUiMode("pro")}>
+                        Open Pro
+                      </button>
+                      <button className="ghost-pill" onClick={() => setSimpleFlowStep("welcome")}>
+                        Start over
+                      </button>
+                    </div>
+
+                    <div className="simple-action-grid">
+                      <div className="result-box">
+                        <strong>Next best action</strong>
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          {builderInsight}
+                        </div>
+                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
+                          {nextBestActions.map((action) => (
+                            <button
+                              key={action.key}
+                              className="simple-action-chip"
+                              onClick={() => runNextBestAction(action)}
+                            >
+                              <strong>{action.label}</strong>
+                              <span>{action.reason}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="result-box">
+                        <strong>Quick starters</strong>
+                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
+                          {[
+                            {
+                              label: "Build Dashboard",
+                              hint: "Start with a cleaner dashboard shell.",
+                              cmd: "make dashboard",
+                            },
+                            {
+                              label: "Create Dev Workspace",
+                              hint: "Open a mini IDE-style builder workspace.",
+                              cmd: "make dev workspace",
+                            },
+                            {
+                              label: "Make SaaS Landing",
+                              hint: "Create a landing-style workspace with stronger preview focus.",
+                              cmd: "make saas landing",
+                            },
+                          ].map((card) => (
+                            <button
+                              key={card.cmd}
+                              className="simple-action-chip"
+                              onClick={() => {
+                                setPrompt(card.cmd);
+                                runBuilderBrain(card.cmd);
+                              }}
+                            >
+                              <strong>{card.label}</strong>
+                              <span>{card.hint}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="Live Preview"
+                  subtitle="The builder should feel like an app, not just loose blocks."
+                  collapsible={false}
+                >
+                  <PreviewCanvas
+                    layout={layoutState}
+                    activeModules={activeModules}
+                    featureState={featureState}
+                    result={result}
+                    prompt={prompt}
                   />
-                  <button className="pill primary" onClick={() => runBuilderBrain()}>
-                    Run Builder Brain
-                  </button>
-                  <button className="ghost-pill" onClick={() => setUiMode("pro")}>
-                    Open Pro
-                  </button>
-                </div>
+                </Panel>
+              </div>
 
-                <div className="simple-action-grid">
-                  <div className="result-box">
-                    <strong>Next best action</strong>
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      {builderInsight}
+              <div className="spot-grid">
+                <Panel title="Status" subtitle="Keep only the essentials visible." compact>
+                  <div className="result-box">{builderInsight}</div>
+                  <div className="status-grid" style={{ marginTop: 14 }}>
+                    <StatCard label="API" value={apiStatus} hint={statusMessage} />
+                    <StatCard label="Layout" value={getLayoutLabel(layoutState)} hint="Current workspace shell" accent="var(--warning)" />
+                    <StatCard label="Modules" value={activeModules.length} hint={featureState.appType} accent="var(--accent-2)" />
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="Battery Planner"
+                  subtitle="Your real backend-connected module stays available here."
+                  compact
+                  defaultCollapsed={false}
+                >
+                  <div className="command-row">
+                    <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
+                      {isLoading ? "Running..." : "Run planner"}
+                    </button>
+                    <button className="mini-btn" onClick={() => addAppliancePreset()}>
+                      Add preset
+                    </button>
+                    <button className="mini-btn" onClick={() => addApplianceRow()}>
+                      Add row
+                    </button>
+                  </div>
+                  {result ? (
+                    <div className="result-box" style={{ marginTop: 12 }}>
+                      <strong>{result.summary}</strong>
+                      <div className="muted" style={{ marginTop: 8 }}>
+                        Daily: {result.daily_wh}Wh · Battery: {result.battery_ah}Ah · Solar: {result.solar_watts}W
+                      </div>
                     </div>
-                    <div className="simple-chip-grid" style={{ marginTop: 12 }}>
-                      {nextBestActions.map((action) => (
-                        <button
-                          key={action.key}
-                          className="simple-action-chip"
-                          onClick={() => runNextBestAction(action)}
-                        >
-                          <strong>{action.label}</strong>
-                          <span>{action.reason}</span>
-                        </button>
-                      ))}
+                  ) : (
+                    <div className="muted" style={{ marginTop: 12 }}>
+                      Run the planner any time without opening the full workspace.
+                    </div>
+                  )}
+                </Panel>
+
+                <Panel title="Session Snapshot" subtitle="Keep simple mode focused on momentum." compact>
+                  <div className="module-list">
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Starter</strong>
+                        <span className="tag">{selectedSimpleStarter.label}</span>
+                      </div>
+                      <div className="muted">{simpleDraft.mainGoal}</div>
+                    </div>
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Style</strong>
+                        <span className="tag">{simpleDraft.style}</span>
+                      </div>
+                      <div className="muted">{simpleDraft.appName}</div>
                     </div>
                   </div>
-
-                  <div className="result-box">
-                    <strong>Quick starters</strong>
-                    <div className="simple-chip-grid" style={{ marginTop: 12 }}>
-                      {[
-                        {
-                          label: "Build Dashboard",
-                          hint: "Start with a cleaner dashboard shell.",
-                          cmd: "make dashboard",
-                        },
-                        {
-                          label: "Create Dev Workspace",
-                          hint: "Open a mini IDE-style builder workspace.",
-                          cmd: "make dev workspace",
-                        },
-                        {
-                          label: "Make SaaS Landing",
-                          hint: "Create a landing-style workspace with stronger preview focus.",
-                          cmd: "make saas landing",
-                        },
-                      ].map((card) => (
-                        <button
-                          key={card.cmd}
-                          className="simple-action-chip"
-                          onClick={() => {
-                            setPrompt(card.cmd);
-                            runBuilderBrain(card.cmd);
-                          }}
-                        >
-                          <strong>{card.label}</strong>
-                          <span>{card.hint}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                </Panel>
               </div>
-            </Panel>
-
-            <Panel
-              title="Live Preview"
-              subtitle="A clean preview without debug steps."
-              collapsible={false}
-            >
-              <PreviewCanvas
-                layout={layoutState}
-                activeModules={activeModules}
-                featureState={featureState}
-                result={result}
-                prompt={prompt}
-              />
-            </Panel>
-          </div>
-
-          <div className="spot-grid">
-            <Panel title="Status" subtitle="Keep only the essentials visible." compact>
-              <div className="result-box">{builderInsight}</div>
-              <div className="status-grid" style={{ marginTop: 14 }}>
-                <StatCard label="API" value={apiStatus} hint={statusMessage} />
-                <StatCard label="Layout" value={getLayoutLabel(layoutState)} hint="Current workspace shell" accent="var(--warning)" />
-                <StatCard label="Modules" value={activeModules.length} hint={featureState.appType} accent="var(--accent-2)" />
-              </div>
-            </Panel>
-
-            <Panel
-              title="Battery Planner"
-              subtitle="Your real backend-connected module stays available here."
-              compact
-              defaultCollapsed={false}
-            >
-              <div className="command-row">
-                <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
-                  {isLoading ? "Running..." : "Run planner"}
-                </button>
-                <button className="mini-btn" onClick={() => addApplianceRow()}>
-                  Add row
-                </button>
-              </div>
-              {result ? (
-                <div className="result-box" style={{ marginTop: 12 }}>
-                  <strong>{computedSummary}</strong>
-                  <div className="muted" style={{ marginTop: 8 }}>
-                    Daily: {result.daily_wh}Wh · Battery: {result.battery_ah}Ah · Solar: {result.solar_watts}W
-                  </div>
-                </div>
-              ) : (
-                <div className="muted" style={{ marginTop: 12 }}>
-                  Run the planner any time without opening the full workspace.
-                </div>
-              )}
-            </Panel>
-
-            <Panel title="Session Snapshot" subtitle="Keep simple mode focused on momentum." compact>
-              <div className="module-list">
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Last command</strong>
-                    <span className="tag">{commandHistory?.[0]?.appType || featureState.appType}</span>
-                  </div>
-                  <div className="muted">{commandHistory?.[0]?.prompt || "No command yet."}</div>
-                </div>
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Style</strong>
-                    <span className="tag">{simpleDraft.style}</span>
-                  </div>
-                  <div className="muted">{simpleDraft.appName}</div>
-                </div>
-              </div>
-            </Panel>
-          </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 
