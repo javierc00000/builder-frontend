@@ -811,6 +811,37 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
   );
 }
 
+function BuilderRunTimeline({ runState }) {
+  const steps = [
+    { key: "parsing", label: "Parsing", description: "Reading the command and detecting intent." },
+    { key: "mutating", label: "Mutating", description: "Applying layout and builder changes." },
+    { key: "updating", label: "Updating", description: "Refreshing preview and files." },
+    { key: "ready", label: "Ready", description: "Ready for the next command." },
+  ];
+
+  const activeIndex = steps.findIndex((step) => step.key === runState.stage);
+  const resolvedIndex = activeIndex === -1 ? (runState.stage === "idle" ? -1 : steps.length - 1) : activeIndex;
+
+  return (
+    <div className="builder-run-timeline">
+      {steps.map((step, index) => {
+        const state =
+          resolvedIndex > index ? "done" : resolvedIndex === index ? "active" : "idle";
+
+        return (
+          <div key={step.key} className={`builder-run-step ${state}`}>
+            <div className="builder-run-index">{index + 1}</div>
+            <div className="builder-run-copy">
+              <strong>{step.label}</strong>
+              <span>{step.description}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [prompt, setPrompt] = useState(() => loadFromStorage(STORAGE_KEYS.prompt, ""));
   const [activeModules, setActiveModules] = useState(() => {
@@ -861,6 +892,11 @@ export default function App() {
   });
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
+  const [runState, setRunState] = useState({
+    stage: "idle",
+    command: "",
+    detail: "Ready for the next command.",
+  });
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -959,6 +995,50 @@ export default function App() {
     setStatusMessage("Preparing your first builder version...");
   }
 
+  function playRunTimeline(commandText, applyCommand) {
+    const commandLabel = String(commandText || "").trim();
+    const parsingTimer = window.setTimeout(() => {
+      setRunState({
+        stage: "parsing",
+        command: commandLabel,
+        detail: "Reading the command and detecting intent.",
+      });
+    }, 0);
+
+    const mutatingTimer = window.setTimeout(() => {
+      setRunState({
+        stage: "mutating",
+        command: commandLabel,
+        detail: "Applying layout and builder changes.",
+      });
+      applyCommand();
+    }, 220);
+
+    const updatingTimer = window.setTimeout(() => {
+      setRunState({
+        stage: "updating",
+        command: commandLabel,
+        detail: "Refreshing preview and files.",
+      });
+    }, 420);
+
+    window.setTimeout(() => {
+      setRunState({
+        stage: "ready",
+        command: commandLabel,
+        detail: "Ready for the next command.",
+      });
+    }, 640);
+
+    return () => {
+      [parsingTimer, mutatingTimer, updatingTimer].forEach((timer) => window.clearTimeout(timer));
+    };
+  }
+
+  function runBuilderSequence(commandText, applyCommand) {
+    playRunTimeline(commandText, applyCommand);
+  }
+
   function runNextBestAction(action) {
     if (!action) return;
     if (action.cmd === "run-planner") {
@@ -966,7 +1046,7 @@ export default function App() {
       return;
     }
     setPrompt(action.cmd);
-    runBuilderBrain(action.cmd);
+    runBuilderSequence(action.cmd, () => runBuilderBrain(action.cmd));
     setSimpleFlowStep("builder");
   }
 
@@ -1138,6 +1218,11 @@ export default function App() {
     }
   }
 
+  function addAppliancePreset() {
+    const nextPreset = APPLIANCE_PRESETS[appliances.length % APPLIANCE_PRESETS.length];
+    addApplianceRow(nextPreset);
+  }
+
   function addApplianceRow(prefill) {
     setAppliances((prev) => [
       ...prev,
@@ -1228,6 +1313,7 @@ export default function App() {
     setActiveModules([...DEFAULT_MODULES]);
     setFeatureState({ ...DEFAULT_FEATURE_STATE });
     setResult(null);
+    setRunState({ stage: "idle", command: "", detail: "Ready for the next command." });
     setBuilderInsight("Builder reset to default state.");
     setStatusMessage("Workspace reset complete.");
     appendMutationLog({
@@ -1601,6 +1687,69 @@ export default function App() {
         .preview-dashboard, .preview-spotlight, .wireframe-shell {
           overflow: hidden;
         }
+        .builder-run-box {
+          display: grid;
+          gap: 12px;
+          overflow: clip;
+        }
+        .builder-run-timeline {
+          display: grid;
+          gap: 10px;
+          margin-top: 4px;
+        }
+        .builder-run-step {
+          display: grid;
+          grid-template-columns: 34px 1fr;
+          gap: 12px;
+          align-items: start;
+          padding: 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(148,163,184,.14);
+          background: rgba(255,255,255,.03);
+          position: relative;
+          z-index: 0;
+        }
+        .builder-run-step.active {
+          border-color: rgba(102, 217, 239, .45);
+          background: rgba(102, 217, 239, .08);
+        }
+        .builder-run-step.done {
+          border-color: rgba(34, 197, 94, .28);
+          background: rgba(34, 197, 94, .08);
+        }
+        .builder-run-index {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(148,163,184,.2);
+          color: var(--muted);
+          background: rgba(255,255,255,.04);
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .builder-run-step.active .builder-run-index {
+          color: #08111f;
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          border-color: transparent;
+        }
+        .builder-run-step.done .builder-run-index {
+          color: #d8ffe4;
+          background: rgba(34, 197, 94, .18);
+          border-color: rgba(34, 197, 94, .3);
+        }
+        .builder-run-copy {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+        .builder-run-copy span {
+          color: var(--muted);
+          font-size: 13px;
+          line-height: 1.45;
+        }
 
         .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
@@ -1640,7 +1789,7 @@ export default function App() {
           </span>
           <span className="badge">Layout: {getLayoutLabel(layoutState)}</span>
           <span className="badge">Modules: {activeModules.length}</span>
-          <button className="pill primary" onClick={() => runBuilderBrain()}>
+          <button className="pill primary" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain())}>
             Run Builder Brain
           </button>
           <button className="ghost-pill" onClick={resetBuilder}>
@@ -1874,11 +2023,11 @@ export default function App() {
                         placeholder="make dashboard"
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
-                            runBuilderBrain();
+                            runBuilderSequence(prompt, () => runBuilderBrain());
                           }
                         }}
                       />
-                      <button className="pill primary" onClick={() => runBuilderBrain()}>
+                      <button className="pill primary" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain())}>
                         Run Builder Brain
                       </button>
                       <button className="ghost-pill" onClick={() => setUiMode("pro")}>
@@ -1887,6 +2036,17 @@ export default function App() {
                       <button className="ghost-pill" onClick={() => setSimpleFlowStep("welcome")}>
                         Start over
                       </button>
+                    </div>
+
+                    <div className="result-box builder-run-box">
+                      <div className="module-top">
+                        <strong>Builder run status</strong>
+                        <span className="tag">{runState.stage === "idle" ? "standby" : runState.stage}</span>
+                      </div>
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        {runState.command ? `Current command: ${runState.command}` : "Run a command and the builder will walk through the steps here."}
+                      </div>
+                      <BuilderRunTimeline runState={runState} />
                     </div>
 
                     <div className="simple-action-grid">
@@ -1934,7 +2094,7 @@ export default function App() {
                               className="simple-action-chip"
                               onClick={() => {
                                 setPrompt(card.cmd);
-                                runBuilderBrain(card.cmd);
+                                runBuilderSequence(card.cmd, () => runBuilderBrain(card.cmd));
                               }}
                             >
                               <strong>{card.label}</strong>
@@ -2074,8 +2234,8 @@ export default function App() {
               subtitle="Detects app type, builder mode, summary style, and recommended modules"
               actions={
                 <>
-                  <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
-                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
+                  <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => runBuilderBrain(prompt))}>Analyze prompt</button>
+                  <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => handleMutationCommand(prompt))}>Apply mutation</button>
                 </>
               }
             >
@@ -2101,6 +2261,15 @@ export default function App() {
               </div>
               <div style={{ height: 14 }} />
               <div className="result-box">{builderInsight}</div>
+              <div style={{ height: 14 }} />
+              <div className="result-box builder-run-box">
+                <div className="module-top">
+                  <strong>Run timeline</strong>
+                  <span className="tag">{runState.stage === "idle" ? "standby" : runState.stage}</span>
+                </div>
+                <div className="muted">{runState.command ? `Current command: ${runState.command}` : "No command running right now."}</div>
+                <BuilderRunTimeline runState={runState} />
+              </div>
             </Panel>
 
             <Panel
@@ -2108,7 +2277,7 @@ export default function App() {
               subtitle="This now mutates modules and the workspace shell"
               actions={
                 <>
-                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
+                  <button className="mini-btn" onClick={() => runBuilderSequence(prompt, () => handleMutationCommand(prompt))}>Apply current command</button>
                   <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
                 </>
               }
@@ -2140,12 +2309,12 @@ export default function App() {
             {activeModules.includes("quick_actions") ? (
               <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
                 <div className="quick-grid">
-                  <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
-                  <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
-                  <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
-                  <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
-                  <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
-                  <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
+                  <button className="pill" onClick={() => runBuilderSequence("make dashboard", () => handleMutationCommand("make dashboard"))}>Make dashboard</button>
+                  <button className="pill" onClick={() => runBuilderSequence("add sidebar", () => handleMutationCommand("add sidebar"))}>Add sidebar</button>
+                  <button className="pill" onClick={() => runBuilderSequence("split layout", () => handleMutationCommand("split layout"))}>Split layout</button>
+                  <button className="pill" onClick={() => runBuilderSequence("add inspector", () => handleMutationCommand("add inspector"))}>Add inspector</button>
+                  <button className="pill" onClick={() => runBuilderSequence("focus preview", () => handleMutationCommand("focus preview"))}>Focus preview</button>
+                  <button className="pill" onClick={() => runBuilderSequence("return to classic layout", () => handleMutationCommand("return to classic layout"))}>Classic layout</button>
                 </div>
               </Panel>
             ) : null}
