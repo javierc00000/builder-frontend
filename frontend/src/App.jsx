@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-
 const API_BASE = "https://builder-backend-092s.onrender.com";
 const STORAGE_KEYS = {
   results: "builder_saved_results_v4",
