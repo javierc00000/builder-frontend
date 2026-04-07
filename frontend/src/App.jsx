@@ -1279,6 +1279,9 @@ export default function App() {
         .app-shell { min-height: 100vh; padding: 18px; }
         .app-shell.dense { padding: 12px; }
         .panel-card {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
           background: var(--panel);
           border: 1px solid var(--panel-border);
           border-radius: 22px;
@@ -1343,10 +1346,10 @@ export default function App() {
         .stack { display: grid; gap: 18px; }
         .dense .stack { gap: 12px; }
         .sidebar {
-          position: sticky;
-          top: 18px;
+          position: relative;
           display: grid;
           gap: 12px;
+          align-self: start;
         }
         .sidebar-nav { display: grid; gap: 10px; }
         .sidebar-btn { width: 100%; text-align: left; }
@@ -1586,6 +1589,19 @@ export default function App() {
           display: grid;
           gap: 8px;
         }
+        .simple-mode-grid, .simple-builder-grid, .spot-grid, .result-box, .preview-dashboard, .preview-spotlight, .wireframe-shell {
+          position: relative;
+          isolation: isolate;
+          z-index: 0;
+        }
+        .simple-starter-card, .simple-action-chip, .simple-generation-step, .result-box, .mini-card, .module-item, .saved-card {
+          position: relative;
+          z-index: 1;
+        }
+        .preview-dashboard, .preview-spotlight, .wireframe-shell {
+          overflow: hidden;
+        }
+
         .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
           .shell-grid { grid-template-columns: 1fr; }
