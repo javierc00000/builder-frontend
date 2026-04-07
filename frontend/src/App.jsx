@@ -1651,7 +1651,7 @@ export default function App() {
         <div className="brand">
           <span className="eyebrow">Personal AI Builder</span>
           <h1>Real Builder Workspace</h1>
-          <p>Features mutate behavior. Commands now mutate the actual layout too.</p>
+          <p>Features mutate behavior. Commands now mutate the actual layout too. <strong style={{color: "var(--accent)"}}>Scroll Fix v2</strong></p>
         </div>
         <div className="topbar-actions">
           <div className="mode-toggle">
@@ -1878,10 +1878,10 @@ export default function App() {
 
           {simpleFlowStep === "builder" ? (
             <>
-              <div className="simple-builder-grid">
+              <div style={{ display: "grid", gap: 18 }}>
                 <Panel
-                  title="Simple Builder"
-                  subtitle="Now you are inside the real builder experience, but still guided."
+                  title="Simple Builder · Scroll Fix v2"
+                  subtitle="One command, one guided next step, one preview. No floating status layer."
                   collapsible={false}
                 >
                   <div className="builder-form" style={{ gap: 14 }}>
@@ -1889,6 +1889,7 @@ export default function App() {
                       <strong>Guided command bar</strong>
                       <span className="tag">Simple</span>
                     </div>
+
                     <div className="command-row">
                       <input
                         className="text-input"
@@ -1917,73 +1918,32 @@ export default function App() {
                       <div className="muted" style={{ marginTop: 6 }}>
                         {prompt ? prompt : "Run a command and the builder will update the workspace."}
                       </div>
-                      <div className="muted" style={{ marginTop: 12 }}>
-                        {statusMessage}
-                      </div>
                     </div>
 
+                    <div className="result-box">
+                      <strong>Builder status</strong>
+                      <div className="muted" style={{ marginTop: 6 }}>{statusMessage}</div>
+                      <div className="muted" style={{ marginTop: 10 }}>{builderInsight}</div>
+                    </div>
 
-                    <div className="simple-action-grid">
-                      <div className="result-box">
-                        <strong>Next best action</strong>
-                        <div className="muted" style={{ marginTop: 6 }}>
-                          {builderInsight}
-                        </div>
-                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
-                          {nextBestActions.map((action) => (
-                            <button
-                              key={action.key}
-                              className="simple-action-chip"
-                              onClick={() => runNextBestAction(action)}
-                            >
-                              <strong>{action.label}</strong>
-                              <span>{action.reason}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="result-box">
-                        <strong>Quick starters</strong>
-                        <div className="simple-chip-grid" style={{ marginTop: 12 }}>
-                          {[
-                            {
-                              label: "Build Dashboard",
-                              hint: "Start with a cleaner dashboard shell.",
-                              cmd: "make dashboard",
-                            },
-                            {
-                              label: "Create Dev Workspace",
-                              hint: "Open a mini IDE-style builder workspace.",
-                              cmd: "make dev workspace",
-                            },
-                            {
-                              label: "Make SaaS Landing",
-                              hint: "Create a landing-style workspace with stronger preview focus.",
-                              cmd: "make saas landing",
-                            },
-                          ].map((card) => (
-                            <button
-                              key={card.cmd}
-                              className="simple-action-chip"
-                              onClick={() => {
-                                setPrompt(card.cmd);
-                                runBuilderSequence(card.cmd, () => runBuilderBrain(card.cmd));
-                              }}
-                            >
-                              <strong>{card.label}</strong>
-                              <span>{card.hint}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    <div className="simple-chip-grid">
+                      {nextBestActions.map((action) => (
+                        <button
+                          key={action.key}
+                          className="simple-action-chip"
+                          onClick={() => runNextBestAction(action)}
+                        >
+                          <strong>{action.label}</strong>
+                          <span>{action.reason}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </Panel>
 
                 <Panel
                   title="Live Preview"
-                  subtitle="The builder should feel like an app, not just loose blocks."
+                  subtitle="Preview stays in the normal document flow."
                   collapsible={false}
                 >
                   <PreviewCanvas
@@ -1994,12 +1954,34 @@ export default function App() {
                     prompt={prompt}
                   />
                 </Panel>
+
+                <Panel title="Quick starters" subtitle="Use one of these to mutate the workspace fast." compact>
+                  <div className="quick-grid">
+                    {[
+                      { label: "Make dashboard", cmd: "make dashboard" },
+                      { label: "Make dev workspace", cmd: "make dev workspace" },
+                      { label: "Make SaaS landing", cmd: "make saas landing" },
+                      { label: "Materialize files", cmd: "materialize files" },
+                      { label: "Regenerate routes", cmd: "regenerate routes" },
+                    ].map((card) => (
+                      <button
+                        key={card.cmd}
+                        className="tab-btn"
+                        onClick={() => {
+                          setPrompt(card.cmd);
+                          runBuilderSequence(card.cmd, () => runBuilderBrain(card.cmd));
+                        }}
+                      >
+                        {card.label}
+                      </button>
+                    ))}
+                  </div>
+                </Panel>
               </div>
 
               <div className="spot-grid">
                 <Panel title="Status" subtitle="Keep only the essentials visible." compact>
-                  <div className="result-box">{builderInsight}</div>
-                  <div className="status-grid" style={{ marginTop: 14 }}>
+                  <div className="status-grid">
                     <StatCard label="API" value={apiStatus} hint={statusMessage} />
                     <StatCard label="Layout" value={getLayoutLabel(layoutState)} hint="Current workspace shell" accent="var(--warning)" />
                     <StatCard label="Modules" value={activeModules.length} hint={featureState.appType} accent="var(--accent-2)" />
