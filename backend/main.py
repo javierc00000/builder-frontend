@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import re
 
-app = FastAPI(title="Builder Backend v2")
+
+app = FastAPI(title="Builder Backend v3 - Code Generator")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,18 +20,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def home():
-    return {"status": "ok", "service": "builder-backend-v2"}
+    return {"status": "ok", "service": "builder-backend-v3"}
+
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "service": "builder-backend-v2"}
+    return {"status": "healthy", "service": "builder-backend-v3"}
+
 
 class ApplianceItem(BaseModel):
     name: str = ""
     watts: float = 0
     hours: float = 0
+
 
 class BatteryPlanRequest(BaseModel):
     appliances: List[ApplianceItem] = Field(default_factory=list)
@@ -38,12 +44,14 @@ class BatteryPlanRequest(BaseModel):
     sun_hours: float = 4
     system_loss: float = 0.2
 
+
 @app.post("/battery-plan")
 def battery_plan(payload: BatteryPlanRequest):
     daily_wh = sum(max(item.watts, 0) * max(item.hours, 0) for item in payload.appliances)
     adjusted_daily_wh = daily_wh * (1 + max(payload.system_loss, 0))
     battery_ah = round((adjusted_daily_wh * max(payload.autonomy_days, 1)) / max(payload.battery_voltage, 1), 1)
     solar_watts = round(adjusted_daily_wh / max(payload.sun_hours, 1), 1)
+
     return {
         "daily_wh": round(daily_wh, 1),
         "adjusted_daily_wh": round(adjusted_daily_wh, 1),
@@ -52,11 +60,22 @@ def battery_plan(payload: BatteryPlanRequest):
         "summary": f"For this setup, plan for about {battery_ah}Ah of battery and {solar_watts}W of solar."
     }
 
+
 class MutateRequest(BaseModel):
     prompt: str
     current_layout: Dict[str, Any] = Field(default_factory=dict)
     active_modules: List[str] = Field(default_factory=list)
     feature_state: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GenerateCodeRequest(BaseModel):
+    prompt: str
+    app_type: str = ""
+    builder_mode: str = ""
+    style: str = "dark glass"
+    routes: List[Dict[str, Any]] = Field(default_factory=list)
+    components: List[Dict[str, Any]] = Field(default_factory=list)
+
 
 def infer_app_type(prompt: str) -> str:
     p = prompt.lower()
@@ -67,6 +86,7 @@ def infer_app_type(prompt: str) -> str:
     if re.search(r"(content|editor|blog|cms|writer|studio)", p):
         return "content app"
     return "tool app"
+
 
 def infer_builder_mode(prompt: str) -> str:
     p = prompt.lower()
@@ -80,6 +100,7 @@ def infer_builder_mode(prompt: str) -> str:
         return "content-builder"
     return "general-builder"
 
+
 def infer_summary_style(prompt: str) -> str:
     p = prompt.lower()
     if re.search(r"(detail|deeper|full|complete|advanced)", p):
@@ -87,6 +108,7 @@ def infer_summary_style(prompt: str) -> str:
     if re.search(r"(simple|quick|fast|short)", p):
         return "concise"
     return "balanced"
+
 
 def recommend_modules(prompt: str, app_type: str) -> List[str]:
     p = prompt.lower()
@@ -121,6 +143,7 @@ def recommend_modules(prompt: str, app_type: str) -> List[str]:
     if re.search(r"(split|two column|2 column|2-column)", p):
         modules.add("split_workspace")
     return sorted(modules)
+
 
 def build_layout(prompt: str, current_layout: Dict[str, Any]) -> Dict[str, Any]:
     layout = {
@@ -173,23 +196,8 @@ def build_layout(prompt: str, current_layout: Dict[str, Any]) -> Dict[str, Any]:
         layout["inspector"] = True
     if re.search(r"(split|two column|2 column|2-column)", p):
         layout["split"] = True
-    if re.search(r"(results first|prioritize results)", p):
-        panels = layout["panels"]["mainBottom"]
-        layout["panels"]["mainBottom"] = ["results"] + [x for x in panels if x != "results"]
-    if re.search(r"(planner first|prioritize planner)", p):
-        panels = layout["panels"]["mainBottom"]
-        layout["panels"]["mainBottom"] = ["planner"] + [x for x in panels if x != "planner"]
-    if re.search(r"(move results to inspector|results in inspector)", p):
-        layout["panels"]["mainBottom"] = [x for x in layout["panels"]["mainBottom"] if x != "results"]
-        if "results" not in layout["panels"]["inspector"]:
-            layout["panels"]["inspector"].append("results")
-        layout["inspector"] = True
-    if re.search(r"(move preview to inspector|preview in inspector)", p):
-        layout["panels"]["mainBottom"] = [x for x in layout["panels"]["mainBottom"] if x != "preview"]
-        if "preview" not in layout["panels"]["inspector"]:
-            layout["panels"]["inspector"].append("preview")
-        layout["inspector"] = True
     return layout
+
 
 def build_file_tree(app_type: str, builder_mode: str, prompt: str) -> List[Dict[str, Any]]:
     base = [
@@ -238,12 +246,8 @@ def build_file_tree(app_type: str, builder_mode: str, prompt: str) -> List[Dict[
             {"path": "src/pages/LoginPage.jsx", "kind": "file", "role": "authentication"},
             {"path": "src/lib/auth.js", "kind": "file", "role": "auth helpers"},
         ]
-    if re.search(r"(database|db|postgres|sqlite)", prompt.lower()):
-        base += [
-            {"path": "backend/db.py", "kind": "file", "role": "database connection"},
-            {"path": "backend/models.py", "kind": "file", "role": "database models"},
-        ]
     return base
+
 
 def build_routes(app_type: str, prompt: str) -> List[Dict[str, str]]:
     routes = [{"path": "/", "component": "App", "reason": "root route"}]
@@ -270,6 +274,7 @@ def build_routes(app_type: str, prompt: str) -> List[Dict[str, str]]:
     if re.search(r"(auth|login|signin|sign in)", prompt.lower()):
         routes.append({"path": "/login", "component": "LoginPage", "reason": "auth entry"})
     return routes
+
 
 def build_components(app_type: str, prompt: str) -> List[Dict[str, str]]:
     base = [
@@ -301,11 +306,8 @@ def build_components(app_type: str, prompt: str) -> List[Dict[str, str]]:
             {"name": "ResultsPanel", "purpose": "tool outputs"},
             {"name": "ExportActions", "purpose": "download/export actions"},
         ]
-    if re.search(r"(kanban)", prompt.lower()):
-        base.append({"name": "KanbanBoard", "purpose": "board view"})
-    if re.search(r"(hero)", prompt.lower()):
-        base.append({"name": "HeroSection", "purpose": "marketing entry section"})
     return base
+
 
 def build_mutation_summary(layout: Dict[str, Any], modules: List[str], app_type: str, builder_mode: str) -> List[str]:
     summary = [
@@ -323,6 +325,558 @@ def build_mutation_summary(layout: Dict[str, Any], modules: List[str], app_type:
         summary.append("Inspector enabled")
     return summary
 
+
+def app_css(style_name: str) -> str:
+    return """
+:root {
+  color-scheme: dark;
+  --bg: #07111f;
+  --panel: rgba(13, 25, 43, 0.88);
+  --panel-border: rgba(148, 163, 184, 0.16);
+  --text: #e5eefc;
+  --muted: #93a4bf;
+  --accent: #66d9ef;
+  --accent-2: #8b5cf6;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, system-ui, Arial, sans-serif;
+  background: radial-gradient(circle at top, #12203a, #07111f 55%);
+  color: var(--text);
+}
+button, input { font: inherit; }
+.app-shell {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+.panel {
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  border-radius: 20px;
+  padding: 18px;
+}
+.row {
+  display: grid;
+  gap: 18px;
+}
+.row.two {
+  grid-template-columns: 260px 1fr;
+}
+.row.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+}
+.primary-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #07111f;
+}
+.muted { color: var(--muted); }
+.card-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.card {
+  border: 1px solid rgba(148,163,184,.14);
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255,255,255,0.03);
+}
+.input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,.16);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  padding: 12px 14px;
+}
+@media (max-width: 900px) {
+  .row.two, .row.three {
+    grid-template-columns: 1fr;
+  }
+}
+""".strip()
+
+
+def main_jsx() -> str:
+    return """
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.jsx";
+import "./styles/app.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+""".strip()
+
+
+def root_app_code(app_type: str, prompt: str) -> str:
+    page_name = {
+        "admin panel": "DashboardPage",
+        "assistant app": "AssistantPage",
+        "content app": "StudioPage",
+        "tool app": "ToolPage",
+    }.get(app_type, "ToolPage")
+
+    return f"""
+import React from "react";
+import {page_name} from "./pages/{page_name}.jsx";
+
+export default function App() {{
+  return <{page_name} />;
+}}
+""".strip()
+
+
+def dashboard_page_code(prompt: str) -> str:
+    return f"""
+import React from "react";
+import {{ Sidebar }} from "../components/Sidebar.jsx";
+import {{ KpiCard }} from "../components/KpiCard.jsx";
+import {{ InspectorPanel }} from "../components/InspectorPanel.jsx";
+
+export function DashboardPage() {{
+  return (
+    <div className="app-shell">
+      <div className="panel">
+        <div className="pill">Admin dashboard</div>
+        <h1>CRM Dashboard</h1>
+        <p className="muted">{prompt}</p>
+      </div>
+
+      <div className="row two">
+        <Sidebar />
+        <div className="row">
+          <div className="card-grid">
+            <KpiCard title="Revenue" value="$24.5k" />
+            <KpiCard title="Pipeline" value="42 deals" />
+            <KpiCard title="Tickets" value="18 open" />
+          </div>
+          <div className="panel">
+            <h2>Workspace</h2>
+            <p className="muted">This generated dashboard gives you a clean admin shell to continue building from.</p>
+          </div>
+        </div>
+      </div>
+
+      <InspectorPanel />
+    </div>
+  );
+}}
+""".strip()
+
+
+def assistant_page_code(prompt: str) -> str:
+    return f"""
+import React from "react";
+import {{ ChatShell }} from "../components/ChatShell.jsx";
+import {{ ToolRail }} from "../components/ToolRail.jsx";
+import {{ MemoryPanel }} from "../components/MemoryPanel.jsx";
+
+export function AssistantPage() {{
+  return (
+    <div className="app-shell">
+      <div className="panel">
+        <div className="pill">Assistant workspace</div>
+        <h1>AI Assistant</h1>
+        <p className="muted">{prompt}</p>
+      </div>
+
+      <div className="row two">
+        <ToolRail />
+        <ChatShell />
+      </div>
+
+      <MemoryPanel />
+    </div>
+  );
+}}
+""".strip()
+
+
+def studio_page_code(prompt: str) -> str:
+    return f"""
+import React from "react";
+import {{ EditorShell }} from "../components/EditorShell.jsx";
+import {{ PreviewPanel }} from "../components/PreviewPanel.jsx";
+import {{ NotesPanel }} from "../components/NotesPanel.jsx";
+
+export function StudioPage() {{
+  return (
+    <div className="app-shell">
+      <div className="panel">
+        <div className="pill">Content studio</div>
+        <h1>Content App</h1>
+        <p className="muted">{prompt}</p>
+      </div>
+
+      <div className="row two">
+        <EditorShell />
+        <PreviewPanel />
+      </div>
+
+      <NotesPanel />
+    </div>
+  );
+}}
+""".strip()
+
+
+def tool_page_code(prompt: str, battery_mode: bool) -> str:
+    extra = '<p className="muted">Battery-focused starter logic can be added next.</p>' if battery_mode else '<p className="muted">This is a clean generated tool starter.</p>'
+    return f"""
+import React from "react";
+import {{ CalculatorForm }} from "../components/CalculatorForm.jsx";
+import {{ ResultsPanel }} from "../components/ResultsPanel.jsx";
+import {{ ExportActions }} from "../components/ExportActions.jsx";
+
+export function ToolPage() {{
+  return (
+    <div className="app-shell">
+      <div className="panel">
+        <div className="pill">Tool workspace</div>
+        <h1>Tool / Calculator</h1>
+        <p className="muted">{prompt}</p>
+        {extra}
+      </div>
+
+      <div className="row two">
+        <CalculatorForm />
+        <ResultsPanel />
+      </div>
+
+      <ExportActions />
+    </div>
+  );
+}}
+""".strip()
+
+
+def sidebar_code() -> str:
+    return """
+import React from "react";
+
+export function Sidebar() {
+  return (
+    <aside className="panel">
+      <h3>Navigation</h3>
+      <div className="card-grid">
+        <div className="card">Overview</div>
+        <div className="card">Customers</div>
+        <div className="card">Deals</div>
+        <div className="card">Reports</div>
+      </div>
+    </aside>
+  );
+}
+""".strip()
+
+
+def kpi_card_code() -> str:
+    return """
+import React from "react";
+
+export function KpiCard({ title, value }) {
+  return (
+    <div className="card">
+      <div className="pill">{title}</div>
+      <h3>{value}</h3>
+    </div>
+  );
+}
+""".strip()
+
+
+def inspector_code() -> str:
+    return """
+import React from "react";
+
+export function InspectorPanel() {
+  return (
+    <section className="panel">
+      <h3>Inspector</h3>
+      <p className="muted">Use this space for details, selected records, and quick controls.</p>
+    </section>
+  );
+}
+""".strip()
+
+
+def chat_shell_code() -> str:
+    return """
+import React from "react";
+
+export function ChatShell() {
+  return (
+    <section className="panel">
+      <h3>Conversation</h3>
+      <div className="card">Assistant response area</div>
+      <input className="input" placeholder="Ask something..." />
+    </section>
+  );
+}
+""".strip()
+
+
+def tool_rail_code() -> str:
+    return """
+import React from "react";
+
+export function ToolRail() {
+  return (
+    <aside className="panel">
+      <h3>Tools</h3>
+      <div className="card-grid">
+        <div className="card">Search</div>
+        <div className="card">Actions</div>
+        <div className="card">History</div>
+      </div>
+    </aside>
+  );
+}
+""".strip()
+
+
+def memory_panel_code() -> str:
+    return """
+import React from "react";
+
+export function MemoryPanel() {
+  return (
+    <section className="panel">
+      <h3>Memory</h3>
+      <p className="muted">Save notes, pinned answers, and reusable context here.</p>
+    </section>
+  );
+}
+""".strip()
+
+
+def editor_shell_code() -> str:
+    return """
+import React from "react";
+
+export function EditorShell() {
+  return (
+    <section className="panel">
+      <h3>Editor</h3>
+      <textarea className="input" rows={12} defaultValue="Start writing here..." />
+    </section>
+  );
+}
+""".strip()
+
+
+def preview_panel_code() -> str:
+    return """
+import React from "react";
+
+export function PreviewPanel() {
+  return (
+    <section className="panel">
+      <h3>Preview</h3>
+      <div className="card">Live preview area</div>
+    </section>
+  );
+}
+""".strip()
+
+
+def notes_panel_code() -> str:
+    return """
+import React from "react";
+
+export function NotesPanel() {
+  return (
+    <section className="panel">
+      <h3>Notes</h3>
+      <textarea className="input" rows={6} defaultValue="Draft notes..." />
+    </section>
+  );
+}
+""".strip()
+
+
+def calculator_form_code() -> str:
+    return """
+import React from "react";
+
+export function CalculatorForm() {
+  return (
+    <section className="panel">
+      <h3>Inputs</h3>
+      <div className="row">
+        <input className="input" placeholder="Value 1" />
+        <input className="input" placeholder="Value 2" />
+        <button className="primary-btn">Calculate</button>
+      </div>
+    </section>
+  );
+}
+""".strip()
+
+
+def results_panel_code() -> str:
+    return """
+import React from "react";
+
+export function ResultsPanel() {
+  return (
+    <section className="panel">
+      <h3>Results</h3>
+      <div className="card">Calculated output will appear here.</div>
+    </section>
+  );
+}
+""".strip()
+
+
+def export_actions_code() -> str:
+    return """
+import React from "react";
+
+export function ExportActions() {
+  return (
+    <section className="panel">
+      <h3>Export</h3>
+      <div className="row">
+        <button className="primary-btn">Export JSON</button>
+        <button className="primary-btn">Export PDF</button>
+      </div>
+    </section>
+  );
+}
+""".strip()
+
+
+def login_page_code() -> str:
+    return """
+import React from "react";
+
+export function LoginPage() {
+  return (
+    <div className="app-shell">
+      <section className="panel">
+        <h1>Login</h1>
+        <div className="row">
+          <input className="input" placeholder="Email" />
+          <input className="input" placeholder="Password" type="password" />
+          <button className="primary-btn">Sign in</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+""".strip()
+
+
+def auth_code() -> str:
+    return """
+export function signIn(email, password) {
+  return { ok: true, email, token: "demo-token" };
+}
+""".strip()
+
+
+def battery_math_code() -> str:
+    return """
+export function estimateBatteryPlan(items = [], voltage = 12, autonomyDays = 1, sunHours = 4, systemLoss = 0.2) {
+  const dailyWh = items.reduce((sum, item) => sum + ((item.watts || 0) * (item.hours || 0)), 0);
+  const adjustedDailyWh = dailyWh * (1 + systemLoss);
+  const batteryAh = Number(((adjustedDailyWh * autonomyDays) / Math.max(voltage, 1)).toFixed(1));
+  const solarWatts = Number((adjustedDailyWh / Math.max(sunHours, 1)).toFixed(1));
+  return { dailyWh, adjustedDailyWh, batteryAh, solarWatts };
+}
+""".strip()
+
+
+def appliance_table_code() -> str:
+    return """
+import React from "react";
+
+export function ApplianceTable() {
+  return (
+    <section className="panel">
+      <h3>Appliances</h3>
+      <div className="card">RV Fridge · Lights · Fan</div>
+    </section>
+  );
+}
+""".strip()
+
+
+def generate_code_bundle(prompt: str, app_type: str, builder_mode: str, style: str) -> List[Dict[str, Any]]:
+    files = [
+        {"path": "src/main.jsx", "language": "javascript", "content": main_jsx()},
+        {"path": "src/App.jsx", "language": "javascript", "content": root_app_code(app_type, prompt)},
+        {"path": "src/styles/app.css", "language": "css", "content": app_css(style)},
+    ]
+
+    if app_type == "admin panel":
+        files += [
+            {"path": "src/pages/DashboardPage.jsx", "language": "javascript", "content": dashboard_page_code(prompt)},
+            {"path": "src/components/Sidebar.jsx", "language": "javascript", "content": sidebar_code()},
+            {"path": "src/components/KpiCard.jsx", "language": "javascript", "content": kpi_card_code()},
+            {"path": "src/components/InspectorPanel.jsx", "language": "javascript", "content": inspector_code()},
+        ]
+    elif app_type == "assistant app":
+        files += [
+            {"path": "src/pages/AssistantPage.jsx", "language": "javascript", "content": assistant_page_code(prompt)},
+            {"path": "src/components/ChatShell.jsx", "language": "javascript", "content": chat_shell_code()},
+            {"path": "src/components/ToolRail.jsx", "language": "javascript", "content": tool_rail_code()},
+            {"path": "src/components/MemoryPanel.jsx", "language": "javascript", "content": memory_panel_code()},
+        ]
+    elif app_type == "content app":
+        files += [
+            {"path": "src/pages/StudioPage.jsx", "language": "javascript", "content": studio_page_code(prompt)},
+            {"path": "src/components/EditorShell.jsx", "language": "javascript", "content": editor_shell_code()},
+            {"path": "src/components/PreviewPanel.jsx", "language": "javascript", "content": preview_panel_code()},
+            {"path": "src/components/NotesPanel.jsx", "language": "javascript", "content": notes_panel_code()},
+        ]
+    else:
+        files += [
+            {"path": "src/pages/ToolPage.jsx", "language": "javascript", "content": tool_page_code(prompt, builder_mode == "battery-planner")},
+            {"path": "src/components/CalculatorForm.jsx", "language": "javascript", "content": calculator_form_code()},
+            {"path": "src/components/ResultsPanel.jsx", "language": "javascript", "content": results_panel_code()},
+            {"path": "src/components/ExportActions.jsx", "language": "javascript", "content": export_actions_code()},
+        ]
+
+    if re.search(r"(auth|login|signin|sign in)", prompt.lower()):
+        files += [
+            {"path": "src/pages/LoginPage.jsx", "language": "javascript", "content": login_page_code()},
+            {"path": "src/lib/auth.js", "language": "javascript", "content": auth_code()},
+        ]
+
+    if builder_mode == "battery-planner":
+        files += [
+            {"path": "src/lib/batteryMath.js", "language": "javascript", "content": battery_math_code()},
+            {"path": "src/components/ApplianceTable.jsx", "language": "javascript", "content": appliance_table_code()},
+        ]
+
+    return files
+
+
 @app.post("/mutate")
 def mutate(payload: MutateRequest):
     prompt = payload.prompt.strip()
@@ -335,6 +889,7 @@ def mutate(payload: MutateRequest):
     routes = build_routes(app_type, prompt)
     components = build_components(app_type, prompt)
     summary = build_mutation_summary(layout, modules, app_type, builder_mode)
+
     return {
         "ok": True,
         "prompt": prompt,
@@ -352,5 +907,32 @@ def mutate(payload: MutateRequest):
             "regenerate routes",
             "add inspector",
             "focus preview",
+            "generate code",
         ],
+    }
+
+
+@app.post("/generate-code")
+def generate_code(payload: GenerateCodeRequest):
+    prompt = payload.prompt.strip()
+    app_type = payload.app_type or infer_app_type(prompt)
+    builder_mode = payload.builder_mode or infer_builder_mode(prompt)
+    style = payload.style or "dark glass"
+
+    files = generate_code_bundle(prompt, app_type, builder_mode, style)
+    routes = payload.routes or build_routes(app_type, prompt)
+    components = payload.components or build_components(app_type, prompt)
+
+    return {
+        "ok": True,
+        "prompt": prompt,
+        "app_type": app_type,
+        "builder_mode": builder_mode,
+        "style": style,
+        "generated_files": files,
+        "routes": routes,
+        "components": components,
+        "entry_file": "src/main.jsx",
+        "app_file": "src/App.jsx",
+        "summary": f"Generated {len(files)} starter files for a {app_type} in {builder_mode} mode.",
     }
