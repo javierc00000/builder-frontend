@@ -888,103 +888,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (simpleFlowStep !== "generating" || !simplePendingPrompt) return undefined;
-
-    setSimpleGenerationStage(0);
-
-    const timers = [
-      window.setTimeout(() => setSimpleGenerationStage(1), 450),
-      window.setTimeout(() => setSimpleGenerationStage(2), 900),
-      window.setTimeout(() => {
-        runBuilderBrain(simplePendingPrompt);
-        setSimpleFlowStep("builder");
-        setSimplePendingPrompt("");
-        setStatusMessage("First builder version generated.");
-      }, 1350),
-    ];
-
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
+    return undefined;
   }, [simpleFlowStep, simplePendingPrompt]);
 
 
-  useEffect(() => {
-    function scrubFloatingDebugBlocks() {
-      if (typeof document === "undefined") return;
 
-      const suspiciousPatterns = [
-        /Parsing\s*intent/i,
-        /Applying\s*mutations/i,
-        /Updating\s*workspace/i,
-        /Ready\s*for\s*the\s*next\s*command/i,
-        /\b1\b[\s\S]*\b2\b[\s\S]*\b3\b[\s\S]*\b4\b/i,
-      ];
 
-      const allNodes = Array.from(document.querySelectorAll("div, section, article, aside"));
-      allNodes.forEach((node) => {
-        const text = (node.textContent || "").replace(/\s+/g, " ").trim();
-        const matchCount = suspiciousPatterns.filter((pattern) => pattern.test(text)).length;
-        if (matchCount >= 2 || (/Parsing/i.test(text) && /Updating/i.test(text) && /Ready/i.test(text))) {
-          const rect = node.getBoundingClientRect();
-          const looksLikeFloatingTimeline =
-            rect.height < 420 &&
-            rect.width > 220 &&
-            (
-              getComputedStyle(node).position === "sticky" ||
-              getComputedStyle(node).position === "fixed" ||
-              getComputedStyle(node).position === "absolute" ||
-              /translate|matrix|perspective/.test(getComputedStyle(node).transform)
-            );
-          if (looksLikeFloatingTimeline || text.length < 600) {
-            node.style.display = "none";
-            node.setAttribute("data-builder-scrubbed", "true");
-          }
-        }
-      });
-
-      const allElements = Array.from(document.querySelectorAll("*"));
-      allElements.forEach((el) => {
-        const style = getComputedStyle(el);
-        const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-        if (
-          !el.closest(".app-shell") &&
-          (/Parsing\s*intent/i.test(text) || /Applying\s*mutations/i.test(text) || /Updating\s*workspace/i.test(text))
-        ) {
-          el.remove();
-          return;
-        }
-        if (/Parsing\s*intent/i.test(text) || /Applying\s*mutations/i.test(text) || /Updating\s*workspace/i.test(text) || /Ready\s*for\s*the\s*next\s*command/i.test(text)) {
-          if (style.position === "sticky" || style.position === "fixed" || style.position === "absolute") {
-            el.style.position = "static";
-            el.style.transform = "none";
-            el.style.animation = "none";
-            el.style.top = "auto";
-            el.style.left = "auto";
-            el.style.right = "auto";
-            el.style.bottom = "auto";
-            if (el.parentElement && !el.closest(".app-shell")) {
-              el.remove();
-            }
-          }
-        }
-      });
-    }
-
-    scrubFloatingDebugBlocks();
-    const observer = new MutationObserver(() => scrubFloatingDebugBlocks());
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-
-    window.addEventListener("scroll", scrubFloatingDebugBlocks, { passive: true });
-    window.addEventListener("resize", scrubFloatingDebugBlocks);
-
-    const timers = [window.setTimeout(scrubFloatingDebugBlocks, 50), window.setTimeout(scrubFloatingDebugBlocks, 300), window.setTimeout(scrubFloatingDebugBlocks, 1000)];
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", scrubFloatingDebugBlocks);
-      window.removeEventListener("resize", scrubFloatingDebugBlocks);
-      timers.forEach((timer) => window.clearTimeout(timer));
-    };
-  }, [uiMode, layoutState.shell]);
   const analysis = useMemo(() => analyzePrompt(prompt), [prompt]);
   const computedSummary = useMemo(
     () => computeSummary(result, featureState.summaryStyle),
@@ -1032,10 +941,11 @@ export default function App() {
   function launchSimpleBuilder() {
     const starterPrompt = buildSimpleStarterPrompt(simpleDraft);
     setPrompt(starterPrompt);
-    setSimplePendingPrompt(starterPrompt);
+    setSimplePendingPrompt("");
     setSimpleGenerationStage(0);
-    setSimpleFlowStep("generating");
-    setStatusMessage("Preparing your first builder version...");
+    runBuilderBrain(starterPrompt);
+    setSimpleFlowStep("builder");
+    setStatusMessage("First builder version generated.");
   }
 
   function runNextBestAction(action) {
