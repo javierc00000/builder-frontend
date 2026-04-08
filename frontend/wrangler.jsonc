@@ -1,14 +1,8 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "builder-frontend",
-  "compatibility_date": "2026-04-07",
-  "observability": {
-    "enabled": true
-  },
+  "compatibility_date": "2026-04-08",
   "assets": {
     "directory": "./dist"
-  },
-  "compatibility_flags": [
-    "nodejs_compat"
-  ]
+  }
 }
