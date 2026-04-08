@@ -1590,23 +1590,7 @@ export default function App() {
         .preview-dashboard, .preview-spotlight, .wireframe-shell {
           overflow: hidden;
         }
-
-
-        [data-builder-scrubbed="true"] { display: none !important; }
-        .app-shell [style*="position: sticky"],
-        .app-shell [style*="position:fixed"],
-        .app-shell [style*="position: fixed"] {
-          position: static !important;
-          top: auto !important;
-          transform: none !important;
-          animation: none !important;
-        }
-        .app-shell {
-          transform: none !important;
-          animation: none !important;
-        }
-
-        .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
+.footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
           .shell-grid { grid-template-columns: 1fr; }
           .with-split .main-workspace,
