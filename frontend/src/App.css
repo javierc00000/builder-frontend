@@ -10,7 +10,7 @@
   padding: 18px;
 }
 
-.app-shell .command-bar-shell {
+.command-bar-shell {
   position: static !important;
   top: auto !important;
   z-index: auto !important;
