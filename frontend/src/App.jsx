@@ -866,6 +866,9 @@ export default function App() {
   const [generatedComponents, setGeneratedComponents] = useState([]);
   const [backendNextActions, setBackendNextActions] = useState([]);
   const [backendMutationSummary, setBackendMutationSummary] = useState([]);
+  const [generatedCodeFiles, setGeneratedCodeFiles] = useState([]);
+  const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState("");
+  const [livePreviewDoc, setLivePreviewDoc] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -931,6 +934,171 @@ export default function App() {
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
   );
+  const selectedGeneratedCodeFile = useMemo(
+    () => generatedCodeFiles.find((file) => file.path === selectedGeneratedFilePath) || generatedCodeFiles[0] || null,
+    [generatedCodeFiles, selectedGeneratedFilePath],
+  );
+
+  useEffect(() => {
+    if (!generatedCodeFiles.length) {
+      setLivePreviewDoc("");
+      return;
+    }
+
+    const cssFile = generatedCodeFiles.find((file) => file.path === "src/styles/app.css");
+    const appFile = generatedCodeFiles.find((file) => file.path === "src/App.jsx");
+    const routeLabel =
+      generatedRoutes[0]?.path ||
+      (featureState.appType === "admin panel"
+        ? "/dashboard"
+        : featureState.appType === "assistant app"
+          ? "/assistant"
+          : featureState.appType === "content app"
+            ? "/studio"
+            : "/tool");
+
+    const previewTitle =
+      featureState.appType === "admin panel"
+        ? "Generated Admin Dashboard"
+        : featureState.appType === "assistant app"
+          ? "Generated Assistant"
+          : featureState.appType === "content app"
+            ? "Generated Content Studio"
+            : "Generated Tool App";
+
+    const appSnippet = appFile?.content
+      ? appFile.content.slice(0, 900).replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      : "Generated app source preview unavailable.";
+
+    const componentCards = generatedComponents.length
+      ? generatedComponents.map((component) => `
+          <div class="runner-chip">
+            <strong>${component.name}</strong>
+            <span>${component.purpose}</span>
+          </div>
+        `).join("")
+      : `<div class="runner-empty">No generated components yet.</div>`;
+
+    const fileCards = generatedCodeFiles.slice(0, 8).map((file) => `
+      <div class="runner-file">
+        <strong>${file.path}</strong>
+        <span>${file.language || "code"}</span>
+      </div>
+    `).join("");
+
+    const previewDoc = `<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${previewTitle}</title>
+    <style>
+      ${cssFile?.content || ""}
+      body {
+        min-height: 100vh;
+      }
+      .runner-shell {
+        min-height: 100vh;
+        padding: 24px;
+        display: grid;
+        gap: 18px;
+      }
+      .runner-hero,
+      .runner-panel {
+        border: 1px solid rgba(148,163,184,.16);
+        background: rgba(13, 25, 43, 0.88);
+        border-radius: 20px;
+        padding: 18px;
+        color: #e5eefc;
+      }
+      .runner-grid {
+        display: grid;
+        grid-template-columns: 1.1fr .9fr;
+        gap: 18px;
+      }
+      .runner-chip-grid,
+      .runner-file-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .runner-chip,
+      .runner-file {
+        border: 1px solid rgba(148,163,184,.14);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255,255,255,.03);
+        display: grid;
+        gap: 6px;
+      }
+      .runner-chip span,
+      .runner-file span,
+      .runner-muted {
+        color: #93a4bf;
+      }
+      .runner-code {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(148,163,184,.14);
+        background: rgba(0,0,0,.22);
+        color: #d9e7ff;
+        white-space: pre-wrap;
+        overflow: auto;
+        max-height: 320px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .runner-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #66d9ef, #8b5cf6);
+        color: #07111f;
+        margin-top: 12px;
+      }
+      @media (max-width: 900px) {
+        .runner-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="runner-shell">
+      <section class="runner-hero">
+        <div class="pill">${previewTitle}</div>
+        <h1 style="margin:12px 0 6px;">${prompt || "Generated app preview"}</h1>
+        <p class="runner-muted">Live preview runner for ${routeLabel}. This is a rendered starter shell generated by your builder.</p>
+        <button class="runner-button">Primary action</button>
+      </section>
+
+      <div class="runner-grid">
+        <section class="runner-panel">
+          <h2 style="margin:0 0 10px;">Generated components</h2>
+          <div class="runner-chip-grid">${componentCards}</div>
+        </section>
+
+        <section class="runner-panel">
+          <h2 style="margin:0 0 10px;">Generated files</h2>
+          <div class="runner-file-grid">${fileCards}</div>
+        </section>
+      </div>
+
+      <section class="runner-panel">
+        <h2 style="margin:0 0 10px;">Generated App.jsx preview</h2>
+        <div class="runner-code"><code>${appSnippet}</code></div>
+      </section>
+    </div>
+  </body>
+</html>`;
+    setLivePreviewDoc(previewDoc);
+  }, [generatedCodeFiles, generatedComponents, generatedRoutes, featureState.appType, prompt]);
 
 
   function updateSimpleDraft(field, value) {
@@ -996,6 +1164,33 @@ export default function App() {
     setActiveModules((prev) => prev.filter((item) => !modulesToRemove.includes(item)));
   }
 
+  async function runGenerateCodeBundle(sourcePrompt, appType, builderMode, routes, components) {
+    const response = await fetch(`${API_BASE}/generate-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: sourcePrompt,
+        app_type: appType,
+        builder_mode: builderMode,
+        style: simpleDraft.style || "Dark glass",
+        routes,
+        components,
+      }),
+    });
+
+    if (!response.ok) throw new Error("Code generation request failed");
+    const data = await response.json();
+    const files = Array.isArray(data.generated_files) ? data.generated_files : [];
+    setGeneratedCodeFiles(files);
+    setSelectedGeneratedFilePath(files[0]?.path || "");
+    appendMutationLog({
+      type: "code-generation",
+      command: sourcePrompt,
+      details: `Generated ${files.length} code files.`,
+    });
+    return data;
+  }
+
   async function runBuilderBrain(customPrompt) {
     const sourcePrompt = (customPrompt ?? prompt).trim();
     if (!sourcePrompt) {
@@ -1039,11 +1234,21 @@ export default function App() {
 
       setLayoutState(nextLayout);
       setActiveModules((prev) => [...new Set([...prev, ...nextModules])]);
-      setGeneratedFileTree(Array.isArray(data.file_tree) ? data.file_tree : []);
-      setGeneratedRoutes(Array.isArray(data.routes) ? data.routes : []);
-      setGeneratedComponents(Array.isArray(data.components) ? data.components : []);
+      const nextFileTree = Array.isArray(data.file_tree) ? data.file_tree : [];
+      const nextRoutes = Array.isArray(data.routes) ? data.routes : [];
+      const nextComponents = Array.isArray(data.components) ? data.components : [];
+      setGeneratedFileTree(nextFileTree);
+      setGeneratedRoutes(nextRoutes);
+      setGeneratedComponents(nextComponents);
       setBackendNextActions(Array.isArray(data.next_best_actions) ? data.next_best_actions : []);
       setBackendMutationSummary(Array.isArray(data.mutation_summary) ? data.mutation_summary : []);
+      await runGenerateCodeBundle(
+        sourcePrompt,
+        data.app_type || nextAnalysis.appType,
+        data.builder_mode || nextAnalysis.builderMode,
+        nextRoutes,
+        nextComponents,
+      );
 
       setCommandHistory((prev) => [
         {
@@ -1082,6 +1287,8 @@ export default function App() {
       setGeneratedComponents([]);
       setBackendNextActions([]);
       setBackendMutationSummary([]);
+      setGeneratedCodeFiles([]);
+      setSelectedGeneratedFilePath("");
 
       setCommandHistory((prev) => [
         {
@@ -1660,6 +1867,27 @@ export default function App() {
           flex: 0 0 auto;
         }
         .simple-generation-step.active .simple-generation-dot { background: var(--accent); }
+        .code-preview {
+          margin: 12px 0 0;
+          padding: 14px;
+          border-radius: 16px;
+          border: 1px solid rgba(148,163,184,.14);
+          background: rgba(0,0,0,.22);
+          color: #d9e7ff;
+          overflow: auto;
+          max-height: 420px;
+          white-space: pre-wrap;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+        .live-preview-frame {
+          width: 100%;
+          min-height: 640px;
+          margin-top: 12px;
+          border: 1px solid rgba(148,163,184,.16);
+          border-radius: 18px;
+          background: rgba(255,255,255,.02);
+        }
         .saved-card {
           border-radius: 18px;
           padding: 14px;
@@ -2088,6 +2316,16 @@ export default function App() {
                             key={action}
                             className="simple-action-chip"
                             onClick={() => {
+                              if (action === "generate code") {
+                                runGenerateCodeBundle(
+                                  prompt,
+                                  featureState.appType,
+                                  featureState.builderMode,
+                                  generatedRoutes,
+                                  generatedComponents,
+                                );
+                                return;
+                              }
                               setPrompt(action);
                               runBuilderBrain(action);
                             }}
@@ -2107,6 +2345,69 @@ export default function App() {
                         </div>
                       ) : null}
                     </div>
+                  </div>
+
+                  <div className="simple-builder-grid" style={{ marginTop: 12 }}>
+                    <div className="result-box">
+                      <div className="module-top">
+                        <strong>Generated code files</strong>
+                        <button
+                          className="mini-btn"
+                          onClick={() => runGenerateCodeBundle(prompt, featureState.appType, featureState.builderMode, generatedRoutes, generatedComponents)}
+                        >
+                          Generate code
+                        </button>
+                      </div>
+                      <div className="module-list" style={{ marginTop: 12 }}>
+                        {generatedCodeFiles.length ? generatedCodeFiles.map((file) => (
+                          <button
+                            key={file.path}
+                            className={`simple-action-chip ${selectedGeneratedCodeFile?.path === file.path ? "active" : ""}`}
+                            onClick={() => setSelectedGeneratedFilePath(file.path)}
+                          >
+                            <strong>{file.path}</strong>
+                            <span>{file.language || "code"}</span>
+                          </button>
+                        )) : <div className="muted">Generate code to inspect real file contents.</div>}
+                      </div>
+                    </div>
+
+                    <div className="result-box">
+                      <strong>Selected file preview</strong>
+                      {selectedGeneratedCodeFile ? (
+                        <div style={{ marginTop: 12 }}>
+                          <div className="module-top">
+                            <strong>{selectedGeneratedCodeFile.path}</strong>
+                            <span className="tag">{selectedGeneratedCodeFile.language || "code"}</span>
+                          </div>
+                          <pre className="code-preview">{selectedGeneratedCodeFile.content}</pre>
+                        </div>
+                      ) : <div className="muted" style={{ marginTop: 12 }}>Pick a generated file to preview its contents.</div>}
+                    </div>
+                  </div>
+
+                  <div className="result-box" style={{ marginTop: 12 }}>
+                    <div className="module-top">
+                      <strong>Live preview runner</strong>
+                      <button
+                        className="mini-btn"
+                        onClick={() => runGenerateCodeBundle(prompt, featureState.appType, featureState.builderMode, generatedRoutes, generatedComponents)}
+                      >
+                        Refresh preview
+                      </button>
+                    </div>
+                    {livePreviewDoc ? (
+                      <iframe
+                        title="Generated app live preview"
+                        className="live-preview-frame"
+                        srcDoc={livePreviewDoc}
+                        sandbox="allow-scripts"
+                      />
+                    ) : (
+                      <div className="muted" style={{ marginTop: 12 }}>
+                        Generate code to render a live preview shell here.
+                      </div>
+                    )}
                   </div>
                 </Panel>
 
