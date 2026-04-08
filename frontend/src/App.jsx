@@ -128,11 +128,6 @@ const QUICK_COMMANDS = [
   "split layout",
   "add notes panel",
   "add inspector",
-  "results first",
-  "planner first",
-  "move results to inspector",
-  "materialize files",
-  "regenerate routes",
   "make it dense",
   "return to classic layout",
   "focus preview",
@@ -523,65 +518,33 @@ function makeStatusText(layout, modules, result) {
   return `Builder is running with ${modules.length} active modules. Layout: ${activeLayout}. ${resultText}`;
 }
 
-function cloneLayout(layout) {
-  return {
-    ...layout,
+function applyLayoutCommand(command, prevLayout, activeModules) {
+  const nextLayout = {
+    ...prevLayout,
     panels: {
-      sidebar: [...layout.panels.sidebar],
-      mainTop: [...layout.panels.mainTop],
-      mainBottom: [...layout.panels.mainBottom],
-      inspector: [...layout.panels.inspector],
+      sidebar: [...prevLayout.panels.sidebar],
+      mainTop: [...prevLayout.panels.mainTop],
+      mainBottom: [...prevLayout.panels.mainBottom],
+      inspector: [...prevLayout.panels.inspector],
     },
   };
-}
-
-function ensurePanel(panelList, panelName) {
-  return panelList.includes(panelName) ? panelList : [...panelList, panelName];
-}
-
-function removePanel(panelList, panelName) {
-  return panelList.filter((item) => item !== panelName);
-}
-
-function movePanelToFront(panelList, panelName) {
-  return [panelName, ...panelList.filter((item) => item !== panelName)];
-}
-
-function movePanelBetweenZones(layout, panelName, fromZone, toZone) {
-  layout.panels[fromZone] = removePanel(layout.panels[fromZone], panelName);
-  layout.panels[toZone] = ensurePanel(layout.panels[toZone], panelName);
-}
-
-function applyLayoutCommand(command, prevLayout, activeModules) {
-  const nextLayout = cloneLayout(prevLayout);
   const moduleAdds = [];
   const notes = [];
   const lower = command.toLowerCase();
 
-  if (/(make dashboard|dashboard mode|turn into dashboard|make crm dashboard|make saas landing)/.test(lower)) {
+  if (/(make dashboard|dashboard mode|turn into dashboard)/.test(lower)) {
     nextLayout.mode = "dashboard";
     nextLayout.shell = "dashboard";
     nextLayout.cards = true;
     nextLayout.previewStyle = "dashboard";
-    nextLayout.split = true;
     moduleAdds.push("dashboard_shell");
     notes.push("Switched workspace into dashboard shell.");
   }
 
-  if (/(ide layout|dev workspace|workspace mode|builder cockpit)/.test(lower)) {
-    nextLayout.mode = "workspace";
-    nextLayout.shell = "classic";
-    nextLayout.sidebar = true;
-    nextLayout.split = true;
-    nextLayout.inspector = true;
-    moduleAdds.push("sidebar_navigation", "split_workspace", "notes_panel");
-    notes.push("Expanded the builder into full IDE layout.");
-  }
-
-  if (/(add sidebar|show sidebar|left sidebar|sidebar navigation|wider sidebar)/.test(lower)) {
+  if (/(add sidebar|show sidebar|left sidebar|sidebar navigation)/.test(lower)) {
     nextLayout.sidebar = true;
     moduleAdds.push("sidebar_navigation");
-    notes.push(/wider sidebar/.test(lower) ? "Enabled a wider-feeling sidebar rail." : "Enabled sidebar navigation.");
+    notes.push("Enabled sidebar navigation.");
   }
 
   if (/(remove sidebar|hide sidebar)/.test(lower)) {
@@ -601,9 +564,11 @@ function applyLayoutCommand(command, prevLayout, activeModules) {
     notes.push("Returned to single column workspace.");
   }
 
-  if (/(add inspector|show inspector|right panel|results to inspector|move results to inspector|move preview to inspector)/.test(lower)) {
+  if (/(add inspector|show inspector|right panel)/.test(lower)) {
     nextLayout.inspector = true;
-    nextLayout.panels.inspector = ensurePanel(nextLayout.panels.inspector, "notes");
+    if (!nextLayout.panels.inspector.includes("notes")) {
+      nextLayout.panels.inspector.push("notes");
+    }
     moduleAdds.push("notes_panel");
     notes.push("Enabled inspector panel on the right.");
   }
@@ -623,62 +588,27 @@ function applyLayoutCommand(command, prevLayout, activeModules) {
     notes.push("Returned to spacious layout spacing.");
   }
 
-  if (/(focus preview|preview mode|canvas focus|prioritize preview)/.test(lower)) {
+  if (/(focus preview|preview mode|canvas focus)/.test(lower)) {
     nextLayout.mode = "focus";
     nextLayout.shell = "focus";
     nextLayout.split = true;
+    nextLayout.sidebar = false;
+    nextLayout.inspector = false;
     nextLayout.previewStyle = "spotlight";
-    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "preview");
     notes.push("Focused the workspace on preview-first mode.");
-  }
-
-  if (/(results first|prioritize results)/.test(lower)) {
-    nextLayout.mode = "workspace";
-    nextLayout.split = true;
-    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "results");
-    notes.push("Moved results to the first position in the lower workspace.");
-  }
-
-  if (/(planner first|prioritize planner|run planner first)/.test(lower)) {
-    nextLayout.mode = "workspace";
-    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "planner");
-    notes.push("Moved planner to the first position in the lower workspace.");
-  }
-
-  if (/(move results to inspector|results in inspector)/.test(lower)) {
-    movePanelBetweenZones(nextLayout, "results", "mainBottom", "inspector");
-    notes.push("Moved results panel into the inspector.");
-  }
-
-  if (/(move preview to inspector|preview in inspector)/.test(lower)) {
-    movePanelBetweenZones(nextLayout, "preview", "mainBottom", "inspector");
-    notes.push("Moved preview panel into the inspector.");
-  }
-
-  if (/(move results to preview|results near preview)/.test(lower)) {
-    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "results");
-    nextLayout.panels.mainBottom = ensurePanel(nextLayout.panels.mainBottom, "preview");
-    notes.push("Kept results and preview grouped together.");
-  }
-
-  if (/(add notes panel|open notes|notes in inspector)/.test(lower)) {
-    nextLayout.inspector = true;
-    nextLayout.panels.inspector = ensurePanel(nextLayout.panels.inspector, "notes");
-    moduleAdds.push("notes_panel");
-    notes.push("Added notes panel into the inspector.");
-  }
-
-  if (/(materialize files|regenerate routes|regenerate all|routes|open layout lab|add hero block|add kanban)/.test(lower)) {
-    nextLayout.mode = "workspace";
-    nextLayout.split = true;
-    nextLayout.sidebar = true;
-    moduleAdds.push("active_features_panel", "status_panel", "quick_actions");
-    notes.push("Applied builder workspace mutations for files, routes, and editor actions.");
   }
 
   if (/(return to classic layout|classic layout|reset layout|default layout)/.test(lower)) {
     return {
-      layout: cloneLayout(DEFAULT_LAYOUT),
+      layout: {
+        ...DEFAULT_LAYOUT,
+        panels: {
+          sidebar: [...DEFAULT_LAYOUT.panels.sidebar],
+          mainTop: [...DEFAULT_LAYOUT.panels.mainTop],
+          mainBottom: [...DEFAULT_LAYOUT.panels.mainBottom],
+          inspector: [...DEFAULT_LAYOUT.panels.inspector],
+        },
+      },
       moduleAdds: [],
       notes: ["Reset workspace back to classic layout."],
     };
@@ -785,8 +715,8 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
     layout.mode === "dashboard"
       ? "Builder Dashboard"
       : layout.mode === "focus"
-        ? "Focused Canvas"
-        : "Workspace Preview";
+      ? "Focused Canvas"
+      : "Workspace Preview";
 
   if (layout.previewStyle === "dashboard") {
     return (
@@ -931,6 +861,11 @@ export default function App() {
   });
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
+  const [generatedFileTree, setGeneratedFileTree] = useState([]);
+  const [generatedRoutes, setGeneratedRoutes] = useState([]);
+  const [generatedComponents, setGeneratedComponents] = useState([]);
+  const [backendNextActions, setBackendNextActions] = useState([]);
+  const [backendMutationSummary, setBackendMutationSummary] = useState([]);
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -958,11 +893,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    return undefined;
+    if (simpleFlowStep !== "generating" || !simplePendingPrompt) return undefined;
+
+    setSimpleGenerationStage(0);
+
+    const timers = [
+      window.setTimeout(() => setSimpleGenerationStage(1), 450),
+      window.setTimeout(() => setSimpleGenerationStage(2), 900),
+      window.setTimeout(() => {
+        runBuilderBrain(simplePendingPrompt);
+        setSimpleFlowStep("builder");
+        setSimplePendingPrompt("");
+        setStatusMessage("First builder version generated.");
+      }, 1350),
+    ];
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [simpleFlowStep, simplePendingPrompt]);
-
-
-
 
   const analysis = useMemo(() => analyzePrompt(prompt), [prompt]);
   const computedSummary = useMemo(
@@ -1011,11 +958,10 @@ export default function App() {
   function launchSimpleBuilder() {
     const starterPrompt = buildSimpleStarterPrompt(simpleDraft);
     setPrompt(starterPrompt);
-    setSimplePendingPrompt("");
+    setSimplePendingPrompt(starterPrompt);
     setSimpleGenerationStage(0);
-    runBuilderBrain(starterPrompt);
-    setSimpleFlowStep("builder");
-    setStatusMessage("First builder version generated.");
+    setSimpleFlowStep("generating");
+    setStatusMessage("Preparing your first builder version...");
   }
 
   function runNextBestAction(action) {
@@ -1050,7 +996,7 @@ export default function App() {
     setActiveModules((prev) => prev.filter((item) => !modulesToRemove.includes(item)));
   }
 
-  function runBuilderBrain(customPrompt) {
+  async function runBuilderBrain(customPrompt) {
     const sourcePrompt = (customPrompt ?? prompt).trim();
     if (!sourcePrompt) {
       setBuilderInsight("Type a command so the builder can mutate the workspace.");
@@ -1058,7 +1004,9 @@ export default function App() {
     }
 
     const nextAnalysis = analyzePrompt(sourcePrompt);
-    ensureModules(nextAnalysis.recommendedModules);
+    const localLayoutMutation = applyLayoutCommand(sourcePrompt, layoutState, activeModules);
+    const localRecommendedModules = [...new Set([...nextAnalysis.recommendedModules, ...localLayoutMutation.moduleAdds])];
+
     setFeatureState((prev) => ({
       ...prev,
       builderMode: nextAnalysis.builderMode,
@@ -1067,36 +1015,103 @@ export default function App() {
       quickIdea: sourcePrompt,
     }));
 
-    const layoutMutation = applyLayoutCommand(sourcePrompt, layoutState, activeModules);
-    setLayoutState(layoutMutation.layout);
-    ensureModules(layoutMutation.moduleAdds);
+    try {
+      setIsLoading(true);
+      setStatusMessage("Running mutation engine v2...");
+      const response = await fetch(`${API_BASE}/mutate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: sourcePrompt,
+          current_layout: layoutState,
+          active_modules: activeModules,
+          feature_state: featureState,
+        }),
+      });
 
-    setCommandHistory((prev) => [
-      {
-        id: uid("cmd"),
-        prompt: sourcePrompt,
-        time: nowLabel(),
-        appType: nextAnalysis.appType,
-        builderMode: nextAnalysis.builderMode,
-      },
-      ...prev,
-    ]);
+      if (!response.ok) throw new Error("Mutation request failed");
+      const data = await response.json();
 
-    appendMutationLog({
-      type: "brain-sync",
-      command: sourcePrompt,
-      details: [
-        `App type → ${nextAnalysis.appType}`,
-        `Builder mode → ${nextAnalysis.builderMode}`,
-        `Summary style → ${nextAnalysis.summaryStyle}`,
-        ...layoutMutation.notes,
-      ].join(" | "),
-    });
+      const nextLayout = data.layout_changes || localLayoutMutation.layout;
+      const nextModules = data.module_changes?.enable?.length
+        ? data.module_changes.enable
+        : [...new Set([...activeModules, ...localRecommendedModules])];
 
-    setBuilderInsight(
-      `Builder brain detected ${nextAnalysis.appType} in ${nextAnalysis.builderMode} mode and applied real workspace mutations: ${getLayoutLabel(layoutMutation.layout)}.`
-    );
-    setStatusMessage("Builder brain updated modules and layout.");
+      setLayoutState(nextLayout);
+      setActiveModules((prev) => [...new Set([...prev, ...nextModules])]);
+      setGeneratedFileTree(Array.isArray(data.file_tree) ? data.file_tree : []);
+      setGeneratedRoutes(Array.isArray(data.routes) ? data.routes : []);
+      setGeneratedComponents(Array.isArray(data.components) ? data.components : []);
+      setBackendNextActions(Array.isArray(data.next_best_actions) ? data.next_best_actions : []);
+      setBackendMutationSummary(Array.isArray(data.mutation_summary) ? data.mutation_summary : []);
+
+      setCommandHistory((prev) => [
+        {
+          id: uid("cmd"),
+          prompt: sourcePrompt,
+          time: nowLabel(),
+          appType: data.app_type || nextAnalysis.appType,
+          builderMode: data.builder_mode || nextAnalysis.builderMode,
+        },
+        ...prev,
+      ]);
+
+      appendMutationLog({
+        type: "backend-mutate",
+        command: sourcePrompt,
+        details: [
+          `App type → ${data.app_type || nextAnalysis.appType}`,
+          `Builder mode → ${data.builder_mode || nextAnalysis.builderMode}`,
+          `Files → ${Array.isArray(data.file_tree) ? data.file_tree.length : 0}`,
+          `Routes → ${Array.isArray(data.routes) ? data.routes.length : 0}`,
+          `Components → ${Array.isArray(data.components) ? data.components.length : 0}`,
+        ].join(" | "),
+      });
+
+      setBuilderInsight(
+        data.mutation_summary?.length
+          ? data.mutation_summary.join(" • ")
+          : `Builder brain applied real workspace mutations: ${getLayoutLabel(nextLayout)}.`
+      );
+      setStatusMessage("Mutation engine v2 applied layout, files, routes, and components.");
+    } catch (error) {
+      setLayoutState(localLayoutMutation.layout);
+      ensureModules(localRecommendedModules);
+      setGeneratedFileTree([]);
+      setGeneratedRoutes([]);
+      setGeneratedComponents([]);
+      setBackendNextActions([]);
+      setBackendMutationSummary([]);
+
+      setCommandHistory((prev) => [
+        {
+          id: uid("cmd"),
+          prompt: sourcePrompt,
+          time: nowLabel(),
+          appType: nextAnalysis.appType,
+          builderMode: nextAnalysis.builderMode,
+        },
+        ...prev,
+      ]);
+
+      appendMutationLog({
+        type: "brain-sync-fallback",
+        command: sourcePrompt,
+        details: [
+          `Fallback app type → ${nextAnalysis.appType}`,
+          `Fallback builder mode → ${nextAnalysis.builderMode}`,
+          ...localLayoutMutation.notes,
+          `Error → ${error.message}`,
+        ].join(" | "),
+      });
+
+      setBuilderInsight(
+        `Mutation engine fallback applied local workspace changes: ${getLayoutLabel(localLayoutMutation.layout)}.`
+      );
+      setStatusMessage(`Backend mutate fallback: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function handleMutationCommand(rawCommand) {
@@ -1214,9 +1229,9 @@ export default function App() {
       prev.map((item) =>
         item.id === id
           ? {
-            ...item,
-            [field]: field === "name" ? value : Number(value),
-          }
+              ...item,
+              [field]: field === "name" ? value : Number(value),
+            }
           : item,
       ),
     );
@@ -1287,6 +1302,11 @@ export default function App() {
     setActiveModules([...DEFAULT_MODULES]);
     setFeatureState({ ...DEFAULT_FEATURE_STATE });
     setResult(null);
+    setGeneratedFileTree([]);
+    setGeneratedRoutes([]);
+    setGeneratedComponents([]);
+    setBackendNextActions([]);
+    setBackendMutationSummary([]);
     setBuilderInsight("Builder reset to default state.");
     setStatusMessage("Workspace reset complete.");
     appendMutationLog({
@@ -1660,7 +1680,8 @@ export default function App() {
         .preview-dashboard, .preview-spotlight, .wireframe-shell {
           overflow: hidden;
         }
-.footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
+
+        .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
           .shell-grid { grid-template-columns: 1fr; }
           .with-split .main-workspace,
@@ -1853,10 +1874,10 @@ export default function App() {
                       selectedSimpleStarter.key === "dashboard"
                         ? "admin panel"
                         : selectedSimpleStarter.key === "assistant"
-                          ? "assistant app"
-                          : selectedSimpleStarter.key === "content"
-                            ? "content app"
-                            : "tool app",
+                        ? "assistant app"
+                        : selectedSimpleStarter.key === "content"
+                        ? "content app"
+                        : "tool app",
                   }}
                   result={result}
                   prompt={buildSimpleStarterPrompt(simpleDraft)}
@@ -1885,8 +1906,8 @@ export default function App() {
                           {index === 0
                             ? selectedSimpleStarter.label
                             : index === 1
-                              ? getLayoutLabel(layoutState)
-                              : "Simple mode is preparing the first real builder view."}
+                            ? getLayoutLabel(layoutState)
+                            : "Simple mode is preparing the first real builder view."}
                         </div>
                       </div>
                     </div>
@@ -2005,6 +2026,90 @@ export default function App() {
                   </div>
                 </Panel>
 
+
+                <Panel
+                  title="Generated Structure"
+                  subtitle="Mutation engine v2 now returns files, routes, and components."
+                  collapsible={false}
+                >
+                  <div className="simple-builder-grid">
+                    <div className="result-box">
+                      <strong>Files</strong>
+                      <div className="module-list" style={{ marginTop: 12 }}>
+                        {generatedFileTree.length ? generatedFileTree.slice(0, 8).map((item) => (
+                          <div key={item.path} className="module-item">
+                            <div className="module-top">
+                              <strong>{item.path}</strong>
+                              <span className="tag">{item.kind}</span>
+                            </div>
+                            <div className="muted">{item.role}</div>
+                          </div>
+                        )) : <div className="muted">Run Builder Brain to generate file structure.</div>}
+                      </div>
+                    </div>
+
+                    <div className="result-box">
+                      <strong>Routes</strong>
+                      <div className="module-list" style={{ marginTop: 12 }}>
+                        {generatedRoutes.length ? generatedRoutes.map((route) => (
+                          <div key={route.path} className="module-item">
+                            <div className="module-top">
+                              <strong>{route.path}</strong>
+                              <span className="tag">{route.component}</span>
+                            </div>
+                            <div className="muted">{route.reason}</div>
+                          </div>
+                        )) : <div className="muted">Routes will appear here after mutation.</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="simple-action-grid" style={{ marginTop: 12 }}>
+                    <div className="result-box">
+                      <strong>Components</strong>
+                      <div className="module-list" style={{ marginTop: 12 }}>
+                        {generatedComponents.length ? generatedComponents.map((component) => (
+                          <div key={component.name} className="module-item">
+                            <div className="module-top">
+                              <strong>{component.name}</strong>
+                              <span className="tag">component</span>
+                            </div>
+                            <div className="muted">{component.purpose}</div>
+                          </div>
+                        )) : <div className="muted">Components will appear here after mutation.</div>}
+                      </div>
+                    </div>
+
+                    <div className="result-box">
+                      <strong>Backend next actions</strong>
+                      <div className="simple-chip-grid" style={{ marginTop: 12 }}>
+                        {backendNextActions.length ? backendNextActions.map((action) => (
+                          <button
+                            key={action}
+                            className="simple-action-chip"
+                            onClick={() => {
+                              setPrompt(action);
+                              runBuilderBrain(action);
+                            }}
+                          >
+                            <strong>{action}</strong>
+                            <span>Suggested by mutation engine v2</span>
+                          </button>
+                        )) : <div className="muted">Backend suggestions will appear here after mutation.</div>}
+                      </div>
+                      {backendMutationSummary.length ? (
+                        <div className="module-list" style={{ marginTop: 12 }}>
+                          {backendMutationSummary.map((item) => (
+                            <div key={item} className="module-item">
+                              <div className="muted">{item}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </Panel>
+
                 <Panel
                   title="Live Preview"
                   subtitle="The builder should feel like an app, not just loose blocks."
@@ -2086,330 +2191,370 @@ export default function App() {
       ) : null}
 
       {uiMode === "pro" ? (
-        <>
-          <div className="shell-grid">
+      <>
+      <div className="shell-grid">
 
-            {layoutState.sidebar ? (
-              <aside className="sidebar">
-                <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
-                  <div className="sidebar-nav">
-                    {sidebarItems.map((item) => (
-                      <button
-                        key={item.key}
-                        className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
-                        onClick={() => setSelectedSidebarView(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+        {layoutState.sidebar ? (
+          <aside className="sidebar">
+            <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
+              <div className="sidebar-nav">
+                {sidebarItems.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
+                    onClick={() => setSelectedSidebarView(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+            <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Shell</strong>
+                    <span className="tag">{layoutState.shell}</span>
                   </div>
-                </Panel>
-                <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Shell</strong>
-                        <span className="tag">{layoutState.shell}</span>
-                      </div>
-                      <div className="muted">Mode: {layoutState.mode}</div>
-                    </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Split</strong>
-                        <span className="tag">{layoutState.split ? "On" : "Off"}</span>
-                      </div>
-                      <div className="muted">Preview style: {layoutState.previewStyle}</div>
-                    </div>
+                  <div className="muted">Mode: {layoutState.mode}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Split</strong>
+                    <span className="tag">{layoutState.split ? "On" : "Off"}</span>
                   </div>
-                </Panel>
-              </aside>
+                  <div className="muted">Preview style: {layoutState.previewStyle}</div>
+                </div>
+              </div>
+            </Panel>
+          </aside>
+        ) : null}
+
+        <main className="main-workspace">
+          <div className="stack">
+            <Panel
+              title="Builder Brain"
+              subtitle="Detects app type, builder mode, summary style, and recommended modules"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
+                </>
+              }
+            >
+              <div className="brain-grid">
+                <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
+                <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
+                <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <textarea
+                className="prompt-box"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
+              />
+              <div style={{ height: 12 }} />
+              <div className="command-row">
+                {QUICK_COMMANDS.map((item) => (
+                  <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="result-box">{builderInsight}</div>
+            </Panel>
+
+            <Panel
+              title="Command Mutations"
+              subtitle="This now mutates modules and the workspace shell"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
+                  <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
+                </>
+              }
+            >
+              <div className="status-grid">
+                <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
+                <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
+                <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Latest status</strong>
+                    <span className="tag">Live</span>
+                  </div>
+                  <div className="muted">{statusMessage}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Workspace shape</strong>
+                    <span className="tag">{getLayoutLabel(layoutState)}</span>
+                  </div>
+                  <div className="muted">Use natural commands to reshape the app shell.</div>
+                </div>
+              </div>
+            </Panel>
+
+            {activeModules.includes("quick_actions") ? (
+              <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
+                <div className="quick-grid">
+                  <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
+                  <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
+                  <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
+                  <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
+                </div>
+              </Panel>
             ) : null}
 
-            <main className="main-workspace">
-              <div className="stack">
-                <Panel
-                  title="Builder Brain"
-                  subtitle="Detects app type, builder mode, summary style, and recommended modules"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
-                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
-                    </>
-                  }
-                >
-                  <div className="brain-grid">
-                    <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
-                    <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
-                    <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <textarea
-                    className="prompt-box"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
-                  />
-                  <div style={{ height: 12 }} />
-                  <div className="command-row">
-                    {QUICK_COMMANDS.map((item) => (
-                      <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{builderInsight}</div>
-                </Panel>
-
-                <Panel
-                  title="Command Mutations"
-                  subtitle="This now mutates modules and the workspace shell"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
-                      <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
-                    </>
-                  }
-                >
-                  <div className="status-grid">
-                    <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
-                    <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
-                    <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Latest status</strong>
-                        <span className="tag">Live</span>
-                      </div>
-                      <div className="muted">{statusMessage}</div>
+            <Panel
+              title="Battery Planner Builder"
+              subtitle="Your backend is still connected. This stays as a real functional module."
+              actions={
+                <>
+                  <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
+                    {isLoading ? "Running..." : "Run /battery-plan"}
+                  </button>
+                  <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
+                </>
+              }
+            >
+              <div className="builder-form">
+                <div className="appliance-table">
+                  {appliances.map((item) => (
+                    <div key={item.id} className="appliance-row">
+                      <input
+                        className="text-input"
+                        value={item.name}
+                        onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
+                        placeholder="Appliance"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.watts}
+                        onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
+                        placeholder="Watts"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.hours}
+                        onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
+                        placeholder="Hours"
+                      />
+                      <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
                     </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Workspace shape</strong>
-                        <span className="tag">{getLayoutLabel(layoutState)}</span>
-                      </div>
-                      <div className="muted">Use natural commands to reshape the app shell.</div>
-                    </div>
-                  </div>
-                </Panel>
-
-                {activeModules.includes("quick_actions") ? (
-                  <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
-                    <div className="quick-grid">
-                      <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
-                      <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
-                      <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
-                      <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
-                      <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
-                      <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel
-                  title="Battery Planner Builder"
-                  subtitle="Your backend is still connected. This stays as a real functional module."
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
-                        {isLoading ? "Running..." : "Run /battery-plan"}
-                      </button>
-                      <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
-                    </>
-                  }
-                >
-                  <div className="builder-form">
-                    <div className="appliance-table">
-                      {appliances.map((item) => (
-                        <div key={item.id} className="appliance-row">
-                          <input
-                            className="text-input"
-                            value={item.name}
-                            onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
-                            placeholder="Appliance"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.watts}
-                            onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
-                            placeholder="Watts"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.hours}
-                            onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
-                            placeholder="Hours"
-                          />
-                          <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="appliance-presets">
-                      {APPLIANCE_PRESETS.map((preset) => (
-                        <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
-                          + {preset.name}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="result-grid">
-                      <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
-                      <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
-                      <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
-                      <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
-                    </div>
-                  </div>
-                </Panel>
-
-                <Panel
-                  title="Results Summary"
-                  subtitle="Saved results, export, and summary stay active while layout mutates"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
-                      <button className="mini-btn" onClick={exportReport}>Export report</button>
-                    </>
-                  }
-                >
-                  <div className="result-grid">
-                    <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
-                    <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
-                    <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
-                    <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{computedSummary}</div>
-                  <div style={{ height: 14 }} />
-                  <div className="saved-grid">
-                    {savedResults.slice(0, 4).map((item) => (
-                      <div key={item.id} className="saved-card">
-                        <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
-                        <div className="muted">{item.time}</div>
-                        <div className="muted">{item.summary}</div>
-                        <div className="tag">{getLayoutLabel(item.layout)}</div>
-                      </div>
-                    ))}
-                    {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
-                  </div>
-                </Panel>
+                  ))}
+                </div>
+                <div className="appliance-presets">
+                  {APPLIANCE_PRESETS.map((preset) => (
+                    <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
+                      + {preset.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="result-grid">
+                  <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
+                  <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
+                  <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
+                  <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
+                </div>
               </div>
+            </Panel>
 
-              <div className="stack">
-                {activeModules.includes("live_preview") ? (
-                  <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
-                    <PreviewCanvas
-                      layout={layoutState}
-                      activeModules={activeModules}
-                      featureState={featureState}
-                      result={result}
-                      prompt={prompt}
-                    />
-                  </Panel>
-                ) : null}
+            <Panel
+              title="Results Summary"
+              subtitle="Saved results, export, and summary stay active while layout mutates"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
+                  <button className="mini-btn" onClick={exportReport}>Export report</button>
+                </>
+              }
+            >
+              <div className="result-grid">
+                <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
+                <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
+                <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
+                <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="result-box">{computedSummary}</div>
+              <div style={{ height: 14 }} />
+              <div className="saved-grid">
+                {savedResults.slice(0, 4).map((item) => (
+                  <div key={item.id} className="saved-card">
+                    <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
+                    <div className="muted">{item.time}</div>
+                    <div className="muted">{item.summary}</div>
+                    <div className="tag">{getLayoutLabel(item.layout)}</div>
+                  </div>
+                ))}
+                {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
+              </div>
+            </Panel>
+          </div>
 
-                {activeModules.includes("active_features_panel") ? (
-                  <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
+          <div className="stack">
+            
+                <Panel
+                  title="Builder Structure"
+                  subtitle="Files, routes, and components returned by mutation engine v2"
+                >
+                  <div className="simple-builder-grid">
                     <div className="module-list">
-                      {activeModuleMeta.map((module) => (
-                        <div key={module.key} className="module-item">
+                      {generatedFileTree.length ? generatedFileTree.slice(0, 10).map((item) => (
+                        <div key={item.path} className="module-item">
                           <div className="module-top">
-                            <strong>{module.label}</strong>
-                            <span className="tag">{module.category}</span>
+                            <strong>{item.path}</strong>
+                            <span className="tag">{item.kind}</span>
                           </div>
-                          <div className="muted">{module.description}</div>
+                          <div className="muted">{item.role}</div>
                         </div>
-                      ))}
+                      )) : <div className="saved-card"><strong>No generated files yet</strong><div className="muted">Run Builder Brain to materialize a structure.</div></div>}
                     </div>
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("status_panel") ? (
-                  <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
                     <div className="module-list">
-                      <div className="module-item">
-                        <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
-                        <div className="muted">{statusText}</div>
-                      </div>
-                      <div className="module-item">
-                        <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
-                        <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
-                      </div>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
-                  <div className="mutation-list">
-                    {mutationLog.slice(0, 10).map((item) => (
-                      <div key={item.id} className="mutation-item">
-                        <div className="mutation-top">
-                          <strong>{item.type}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div>{item.command}</div>
-                        <div className="muted">{item.details}</div>
-                      </div>
-                    ))}
-                    {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
-                  </div>
-                </Panel>
-              </div>
-            </main>
-
-            {layoutState.inspector ? (
-              <aside className="stack">
-                <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
-                  <div className="history-list">
-                    {commandHistory.slice(0, 5).map((item) => (
-                      <div key={item.id} className="history-item">
-                        <div className="history-top">
-                          <strong>{item.prompt}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div className="muted">{item.appType} · {item.builderMode}</div>
-                      </div>
-                    ))}
-                    {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
-                  </div>
-                </Panel>
-
-                {activeModules.includes("affiliate_suggestions") ? (
-                  <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
-                    <div className="affiliate-list">
-                      {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
-                        <div key={item.title} className="affiliate-item">
-                          <div className="affiliate-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">smart fit</span>
+                      {generatedRoutes.length ? generatedRoutes.map((route) => (
+                        <div key={route.path} className="module-item">
+                          <div className="module-top">
+                            <strong>{route.path}</strong>
+                            <span className="tag">{route.component}</span>
                           </div>
-                          <div className="muted">{item.fit}</div>
+                          <div className="muted">{route.reason}</div>
                         </div>
-                      )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
+                      )) : <div className="saved-card"><strong>No routes yet</strong><div className="muted">Routes from /mutate will appear here.</div></div>}
+                      {generatedComponents.length ? generatedComponents.slice(0, 6).map((component) => (
+                        <div key={component.name} className="module-item">
+                          <div className="module-top">
+                            <strong>{component.name}</strong>
+                            <span className="tag">component</span>
+                          </div>
+                          <div className="muted">{component.purpose}</div>
+                        </div>
+                      )) : null}
                     </div>
-                  </Panel>
-                ) : null}
+                  </div>
+                </Panel>
 
-                {activeModules.includes("notes_panel") ? (
-                  <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
-                    <textarea
-                      className="notes-box"
-                      value={featureState.notes}
-                      onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
-                    />
-                  </Panel>
-                ) : null}
-              </aside>
+{activeModules.includes("live_preview") ? (
+              <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
+                <PreviewCanvas
+                  layout={layoutState}
+                  activeModules={activeModules}
+                  featureState={featureState}
+                  result={result}
+                  prompt={prompt}
+                />
+              </Panel>
             ) : null}
-          </div>
 
-          <div className="footer-note">
-            Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
+            {activeModules.includes("active_features_panel") ? (
+              <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
+                <div className="module-list">
+                  {activeModuleMeta.map((module) => (
+                    <div key={module.key} className="module-item">
+                      <div className="module-top">
+                        <strong>{module.label}</strong>
+                        <span className="tag">{module.category}</span>
+                      </div>
+                      <div className="muted">{module.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("status_panel") ? (
+              <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
+                <div className="module-list">
+                  <div className="module-item">
+                    <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
+                    <div className="muted">{statusText}</div>
+                  </div>
+                  <div className="module-item">
+                    <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
+                    <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
+                  </div>
+                </div>
+              </Panel>
+            ) : null}
+
+            <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
+              <div className="mutation-list">
+                {mutationLog.slice(0, 10).map((item) => (
+                  <div key={item.id} className="mutation-item">
+                    <div className="mutation-top">
+                      <strong>{item.type}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div>{item.command}</div>
+                    <div className="muted">{item.details}</div>
+                  </div>
+                ))}
+                {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
+              </div>
+            </Panel>
           </div>
-        </>
+        </main>
+
+        {layoutState.inspector ? (
+          <aside className="stack">
+            <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
+              <div className="history-list">
+                {commandHistory.slice(0, 5).map((item) => (
+                  <div key={item.id} className="history-item">
+                    <div className="history-top">
+                      <strong>{item.prompt}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div className="muted">{item.appType} · {item.builderMode}</div>
+                  </div>
+                ))}
+                {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
+              </div>
+            </Panel>
+
+            {activeModules.includes("affiliate_suggestions") ? (
+              <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
+                <div className="affiliate-list">
+                  {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
+                    <div key={item.title} className="affiliate-item">
+                      <div className="affiliate-top">
+                        <strong>{item.title}</strong>
+                        <span className="tag">smart fit</span>
+                      </div>
+                      <div className="muted">{item.fit}</div>
+                    </div>
+                  )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("notes_panel") ? (
+              <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
+                <textarea
+                  className="notes-box"
+                  value={featureState.notes}
+                  onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
+                />
+              </Panel>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
+
+      <div className="footer-note">
+        Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
+      </div>
+      </>
       ) : null}
     </div>
   );
