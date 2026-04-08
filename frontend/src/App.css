@@ -1,13 +1,12 @@
 
 /* === CLEANED CSS (final fix) === */
 
-.premium-command-shell {
-    /* animation removed to prevent transform/layout bugs */
-}
-
-.command-bar-shell {
-    position: relative;
-    z-index: 1;
-    margin: 0 auto 18px;
-    max-width: 980px;
+.app-shell .command-bar-shell,
+.app-shell .premium-command-shell {
+  display: block !important;
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+  transform: none !important;
+  animation: none !important;
 }
