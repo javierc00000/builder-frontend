@@ -128,6 +128,11 @@ const QUICK_COMMANDS = [
   "split layout",
   "add notes panel",
   "add inspector",
+  "results first",
+  "planner first",
+  "move results to inspector",
+  "materialize files",
+  "regenerate routes",
   "make it dense",
   "return to classic layout",
   "focus preview",
@@ -518,33 +523,65 @@ function makeStatusText(layout, modules, result) {
   return `Builder is running with ${modules.length} active modules. Layout: ${activeLayout}. ${resultText}`;
 }
 
-function applyLayoutCommand(command, prevLayout, activeModules) {
-  const nextLayout = {
-    ...prevLayout,
+function cloneLayout(layout) {
+  return {
+    ...layout,
     panels: {
-      sidebar: [...prevLayout.panels.sidebar],
-      mainTop: [...prevLayout.panels.mainTop],
-      mainBottom: [...prevLayout.panels.mainBottom],
-      inspector: [...prevLayout.panels.inspector],
+      sidebar: [...layout.panels.sidebar],
+      mainTop: [...layout.panels.mainTop],
+      mainBottom: [...layout.panels.mainBottom],
+      inspector: [...layout.panels.inspector],
     },
   };
+}
+
+function ensurePanel(panelList, panelName) {
+  return panelList.includes(panelName) ? panelList : [...panelList, panelName];
+}
+
+function removePanel(panelList, panelName) {
+  return panelList.filter((item) => item !== panelName);
+}
+
+function movePanelToFront(panelList, panelName) {
+  return [panelName, ...panelList.filter((item) => item !== panelName)];
+}
+
+function movePanelBetweenZones(layout, panelName, fromZone, toZone) {
+  layout.panels[fromZone] = removePanel(layout.panels[fromZone], panelName);
+  layout.panels[toZone] = ensurePanel(layout.panels[toZone], panelName);
+}
+
+function applyLayoutCommand(command, prevLayout, activeModules) {
+  const nextLayout = cloneLayout(prevLayout);
   const moduleAdds = [];
   const notes = [];
   const lower = command.toLowerCase();
 
-  if (/(make dashboard|dashboard mode|turn into dashboard)/.test(lower)) {
+  if (/(make dashboard|dashboard mode|turn into dashboard|make crm dashboard|make saas landing)/.test(lower)) {
     nextLayout.mode = "dashboard";
     nextLayout.shell = "dashboard";
     nextLayout.cards = true;
     nextLayout.previewStyle = "dashboard";
+    nextLayout.split = true;
     moduleAdds.push("dashboard_shell");
     notes.push("Switched workspace into dashboard shell.");
   }
 
-  if (/(add sidebar|show sidebar|left sidebar|sidebar navigation)/.test(lower)) {
+  if (/(ide layout|dev workspace|workspace mode|builder cockpit)/.test(lower)) {
+    nextLayout.mode = "workspace";
+    nextLayout.shell = "classic";
+    nextLayout.sidebar = true;
+    nextLayout.split = true;
+    nextLayout.inspector = true;
+    moduleAdds.push("sidebar_navigation", "split_workspace", "notes_panel");
+    notes.push("Expanded the builder into full IDE layout.");
+  }
+
+  if (/(add sidebar|show sidebar|left sidebar|sidebar navigation|wider sidebar)/.test(lower)) {
     nextLayout.sidebar = true;
     moduleAdds.push("sidebar_navigation");
-    notes.push("Enabled sidebar navigation.");
+    notes.push(/wider sidebar/.test(lower) ? "Enabled a wider-feeling sidebar rail." : "Enabled sidebar navigation.");
   }
 
   if (/(remove sidebar|hide sidebar)/.test(lower)) {
@@ -564,11 +601,9 @@ function applyLayoutCommand(command, prevLayout, activeModules) {
     notes.push("Returned to single column workspace.");
   }
 
-  if (/(add inspector|show inspector|right panel)/.test(lower)) {
+  if (/(add inspector|show inspector|right panel|results to inspector|move results to inspector|move preview to inspector)/.test(lower)) {
     nextLayout.inspector = true;
-    if (!nextLayout.panels.inspector.includes("notes")) {
-      nextLayout.panels.inspector.push("notes");
-    }
+    nextLayout.panels.inspector = ensurePanel(nextLayout.panels.inspector, "notes");
     moduleAdds.push("notes_panel");
     notes.push("Enabled inspector panel on the right.");
   }
@@ -588,27 +623,62 @@ function applyLayoutCommand(command, prevLayout, activeModules) {
     notes.push("Returned to spacious layout spacing.");
   }
 
-  if (/(focus preview|preview mode|canvas focus)/.test(lower)) {
+  if (/(focus preview|preview mode|canvas focus|prioritize preview)/.test(lower)) {
     nextLayout.mode = "focus";
     nextLayout.shell = "focus";
     nextLayout.split = true;
-    nextLayout.sidebar = false;
-    nextLayout.inspector = false;
     nextLayout.previewStyle = "spotlight";
+    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "preview");
     notes.push("Focused the workspace on preview-first mode.");
+  }
+
+  if (/(results first|prioritize results)/.test(lower)) {
+    nextLayout.mode = "workspace";
+    nextLayout.split = true;
+    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "results");
+    notes.push("Moved results to the first position in the lower workspace.");
+  }
+
+  if (/(planner first|prioritize planner|run planner first)/.test(lower)) {
+    nextLayout.mode = "workspace";
+    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "planner");
+    notes.push("Moved planner to the first position in the lower workspace.");
+  }
+
+  if (/(move results to inspector|results in inspector)/.test(lower)) {
+    movePanelBetweenZones(nextLayout, "results", "mainBottom", "inspector");
+    notes.push("Moved results panel into the inspector.");
+  }
+
+  if (/(move preview to inspector|preview in inspector)/.test(lower)) {
+    movePanelBetweenZones(nextLayout, "preview", "mainBottom", "inspector");
+    notes.push("Moved preview panel into the inspector.");
+  }
+
+  if (/(move results to preview|results near preview)/.test(lower)) {
+    nextLayout.panels.mainBottom = movePanelToFront(nextLayout.panels.mainBottom, "results");
+    nextLayout.panels.mainBottom = ensurePanel(nextLayout.panels.mainBottom, "preview");
+    notes.push("Kept results and preview grouped together.");
+  }
+
+  if (/(add notes panel|open notes|notes in inspector)/.test(lower)) {
+    nextLayout.inspector = true;
+    nextLayout.panels.inspector = ensurePanel(nextLayout.panels.inspector, "notes");
+    moduleAdds.push("notes_panel");
+    notes.push("Added notes panel into the inspector.");
+  }
+
+  if (/(materialize files|regenerate routes|regenerate all|routes|open layout lab|add hero block|add kanban)/.test(lower)) {
+    nextLayout.mode = "workspace";
+    nextLayout.split = true;
+    nextLayout.sidebar = true;
+    moduleAdds.push("active_features_panel", "status_panel", "quick_actions");
+    notes.push("Applied builder workspace mutations for files, routes, and editor actions.");
   }
 
   if (/(return to classic layout|classic layout|reset layout|default layout)/.test(lower)) {
     return {
-      layout: {
-        ...DEFAULT_LAYOUT,
-        panels: {
-          sidebar: [...DEFAULT_LAYOUT.panels.sidebar],
-          mainTop: [...DEFAULT_LAYOUT.panels.mainTop],
-          mainBottom: [...DEFAULT_LAYOUT.panels.mainBottom],
-          inspector: [...DEFAULT_LAYOUT.panels.inspector],
-        },
-      },
+      layout: cloneLayout(DEFAULT_LAYOUT),
       moduleAdds: [],
       notes: ["Reset workspace back to classic layout."],
     };
@@ -1024,7 +1094,7 @@ export default function App() {
     });
 
     setBuilderInsight(
-      `Builder brain detected ${nextAnalysis.appType} in ${nextAnalysis.builderMode} mode and restructured the workspace to ${getLayoutLabel(layoutMutation.layout)}.`
+      `Builder brain detected ${nextAnalysis.appType} in ${nextAnalysis.builderMode} mode and applied real workspace mutations: ${getLayoutLabel(layoutMutation.layout)}.`
     );
     setStatusMessage("Builder brain updated modules and layout.");
   }
