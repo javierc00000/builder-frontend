@@ -1,9 +1,16 @@
 
 /* === CLEANED CSS (final fix) === */
+.app-shell {
+  padding: 0 !important;
+}
 
-.app-shell .command-bar-shell,
-.app-shell .premium-command-shell {
-  display: block !important;
+.topbar,
+.command-bar-shell,
+.simple-mode-shell {
+  padding: 18px;
+}
+
+.app-shell .command-bar-shell {
   position: static !important;
   top: auto !important;
   z-index: auto !important;
