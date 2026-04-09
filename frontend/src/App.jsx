@@ -1849,6 +1849,8 @@ export default function App() {
   const [runtimeSandboxUrl, setRuntimeSandboxUrl] = useState(() => loadFromStorage(STORAGE_KEYS.runtimeSandboxUrl, ""));
   const [runtimeSandboxStatus, setRuntimeSandboxStatus] = useState("idle");
   const [runtimeSandboxError, setRuntimeSandboxError] = useState("");
+  const [runtimeSandboxMeta, setRuntimeSandboxMeta] = useState(null);
+  const [runtimeSandboxLogs, setRuntimeSandboxLogs] = useState([]);
   const [isRunningRuntimeSandbox, setIsRunningRuntimeSandbox] = useState(false);
   const [selectedPreviewRoute, setSelectedPreviewRoute] = useState("/");
   const [previewAuthMode, setPreviewAuthMode] = useState("guest");
@@ -1899,6 +1901,16 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxSession, runtimeSandboxSessionId), [runtimeSandboxSessionId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxUrl, runtimeSandboxUrl), [runtimeSandboxUrl]);
+
+  useEffect(() => {
+    if (!runtimeSandboxSessionId) return undefined;
+    const run = () => {
+      refreshRuntimeSandboxStatus();
+    };
+    run();
+    const timer = window.setInterval(run, 5000);
+    return () => window.clearInterval(timer);
+  }, [runtimeSandboxSessionId]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -2646,6 +2658,8 @@ export default function App() {
       setRuntimeSandboxSessionId(data.session_id || "");
       setRuntimeSandboxUrl(nextUrl);
       setRuntimeSandboxStatus(data.status || "ready");
+      setRuntimeSandboxMeta(data);
+      setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
       setStatusMessage(`Runtime sandbox ready${data.session_id ? ` · ${data.session_id}` : ""}`);
       appendMutationLog({
         type: "runtime-sandbox",
@@ -2670,11 +2684,75 @@ export default function App() {
       if (!response.ok) throw new Error("Sandbox status request failed");
       const data = await response.json();
       setRuntimeSandboxStatus(data.status || "ready");
+      setRuntimeSandboxMeta(data);
+      if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
       if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
       return data;
     } catch (error) {
       setRuntimeSandboxError(error.message || "Sandbox status failed");
       return null;
+    }
+  }
+
+  async function fetchRuntimeSandboxLogs(sessionIdOverride) {
+    const targetSessionId = sessionIdOverride || runtimeSandboxSessionId;
+    if (!targetSessionId) return [];
+    try {
+      const response = await fetch(`${API_BASE}/preview/logs/${targetSessionId}`);
+      if (!response.ok) throw new Error("Sandbox logs request failed");
+      const data = await response.json();
+      const logs = Array.isArray(data.logs) ? data.logs : [];
+      setRuntimeSandboxLogs(logs);
+      return logs;
+    } catch (error) {
+      setRuntimeSandboxError(error.message || "Sandbox logs failed");
+      return [];
+    }
+  }
+
+  async function reloadRuntimeSandbox() {
+    if (!generatedCodeFiles.length) {
+      setRuntimeSandboxError("Generate the app first before reloading the runtime sandbox.");
+      return null;
+    }
+    if (!runtimeSandboxSessionId) {
+      return runRuntimeSandbox();
+    }
+    try {
+      setIsRunningRuntimeSandbox(true);
+      setRuntimeSandboxError("");
+      setRuntimeSandboxStatus("reloading");
+      const response = await fetch(`${API_BASE}/preview/reload/${runtimeSandboxSessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: runtimeSandboxSessionId,
+          project_id: projectId || undefined,
+          prompt: prompt || featureState.quickIdea,
+          app_type: featureState.appType,
+          builder_mode: featureState.builderMode,
+          route: selectedPreviewRoute || activePreviewRoute?.path || "/",
+          auth_mode: previewAuthMode || "guest",
+          files: generatedCodeFiles,
+          routes: generatedRoutes,
+          components: generatedComponents,
+          systems: systemPlanner?.systems || [],
+        }),
+      });
+      if (!response.ok) throw new Error("Sandbox reload request failed");
+      const data = await response.json();
+      setRuntimeSandboxMeta(data);
+      setRuntimeSandboxStatus(data.status || "running");
+      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
+      if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
+      setStatusMessage(`Runtime sandbox reloaded on ${data.route || selectedPreviewRoute || "/"}.`);
+      return data;
+    } catch (error) {
+      setRuntimeSandboxError(error.message || "Sandbox reload failed");
+      setRuntimeSandboxStatus("error");
+      return null;
+    } finally {
+      setIsRunningRuntimeSandbox(false);
     }
   }
 
@@ -2695,6 +2773,8 @@ export default function App() {
       setRuntimeSandboxUrl("");
       setRuntimeSandboxStatus("idle");
       setRuntimeSandboxError("");
+      setRuntimeSandboxMeta(null);
+      setRuntimeSandboxLogs([]);
       setStatusMessage("Runtime sandbox reset.");
     } catch (error) {
       setRuntimeSandboxError(error.message || "Sandbox reset failed");
@@ -4509,10 +4589,10 @@ async function downloadDeploymentBundle(target) {
                         </button>
                         <button
                           className="mini-btn"
-                          onClick={() => runRuntimeSandbox()}
+                          onClick={() => (runtimeSandboxSessionId ? reloadRuntimeSandbox() : runRuntimeSandbox())}
                           disabled={!generatedCodeFiles.length || isRunningRuntimeSandbox}
                         >
-                          {isRunningRuntimeSandbox ? "Starting sandbox..." : runtimeSandboxUrl ? "Reload sandbox" : "Run sandbox"}
+                          {isRunningRuntimeSandbox ? "Reloading sandbox..." : runtimeSandboxUrl ? "Reload sandbox" : "Run sandbox"}
                         </button>
                         <button
                           className="mini-btn"
@@ -4565,6 +4645,8 @@ async function downloadDeploymentBundle(target) {
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <span className="tag">Sandbox: {runtimeSandboxStatus}</span>
                         {runtimeSandboxSessionId ? <span className="tag">Session {runtimeSandboxSessionId.slice(0, 8)}</span> : null}
+                        {runtimeSandboxMeta?.runtime_mode ? <span className="tag">{runtimeSandboxMeta.runtime_mode}</span> : null}
+                        {runtimeSandboxMeta?.project_dir ? <span className="tag">Temp project ready</span> : null}
                         {runtimeSandboxError ? <span className="tag" style={{ color: "#fecaca" }}>{runtimeSandboxError}</span> : null}
                       </div>
                     ) : null}
@@ -4584,9 +4666,41 @@ async function downloadDeploymentBundle(target) {
                       />
                     ) : (
                       <div className="muted" style={{ marginTop: 12 }}>
-                        Generate code to render a live preview shell here. Phase 1 sandbox runs a lightweight backend-managed preview session.
+                        Generate code to render a live preview shell here. Phase 2 sandbox now writes a temp project, tracks runtime status, and exposes logs/manifest data before a full npm runner.
                       </div>
                     )}
+
+                    {runtimeSandboxSessionId ? (
+                      <div className="result-box" style={{ marginTop: 14 }}>
+                        <div className="module-top">
+                          <strong>Runtime sandbox logs</strong>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            {runtimeSandboxMeta?.manifest_url ? (
+                              <a className="mini-btn" href={normalizeRuntimePreviewUrl(runtimeSandboxMeta.manifest_url)} target="_blank" rel="noreferrer">
+                                Open manifest
+                              </a>
+                            ) : null}
+                            <button className="mini-btn" onClick={() => fetchRuntimeSandboxLogs()}>
+                              Refresh logs
+                            </button>
+                          </div>
+                        </div>
+                        {runtimeSandboxMeta?.project_dir ? (
+                          <p className="muted" style={{ marginTop: 8 }}>
+                            Temp project prepared at: {runtimeSandboxMeta.project_dir}
+                          </p>
+                        ) : null}
+                        {runtimeSandboxLogs.length ? (
+                          <pre className="code-preview" style={{ marginTop: 12 }}>
+{runtimeSandboxLogs.join("\n")}
+                          </pre>
+                        ) : (
+                          <div className="muted" style={{ marginTop: 12 }}>
+                            Sandbox logs will appear here after the runner prepares the temp project.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
 
                     <div className="result-box" style={{ marginTop: 14 }}>
                       <div className="module-top">
