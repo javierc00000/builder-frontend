@@ -18,6 +18,8 @@ const STORAGE_KEYS = {
   systemPlanner: "builder_system_planner_v1",
   projectId: "builder_project_id_v1",
   orchestrationHistory: "builder_orchestration_history_v1",
+  builderChatHistory: "builder_chat_history_v1",
+  builderChatDraft: "builder_chat_draft_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -1513,6 +1515,11 @@ export default function App() {
   );
   const [projectId, setProjectId] = useState(() => loadFromStorage(STORAGE_KEYS.projectId, ""));
   const [orchestrationHistory, setOrchestrationHistory] = useState(() => loadFromStorage(STORAGE_KEYS.orchestrationHistory, []));
+  const [builderChatHistory, setBuilderChatHistory] = useState(() => loadFromStorage(STORAGE_KEYS.builderChatHistory, []));
+  const [builderChatDraft, setBuilderChatDraft] = useState(() => loadFromStorage(STORAGE_KEYS.builderChatDraft, ""));
+  const [isChatSubmitting, setIsChatSubmitting] = useState(false);
+  const [chatScrollTick, setChatScrollTick] = useState(0);
+  const [chatComposerMode, setChatComposerMode] = useState("evolve");
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [deployExportTarget, setDeployExportTarget] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
@@ -1531,6 +1538,8 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
   useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1601,6 +1610,14 @@ export default function App() {
     [generatedCodeFiles, selectedGeneratedFilePath],
   );
   const latestMutationVersion = useMemo(() => mutationVersions[0] || null, [mutationVersions]);
+  const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
+  const builderChatQuickIdeas = useMemo(() => [
+    projectId ? "Keep improving this app" : "Build the first version",
+    "Add dark mode and sidebar",
+    "Add login and saved data",
+    "Make it mobile friendly",
+    "Export this app for Render",
+  ], [projectId]);
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -1762,6 +1779,69 @@ export default function App() {
 </html>`;
     setLivePreviewDoc(previewDoc);
   }, [generatedCodeFiles, generatedComponents, generatedRoutes, featureState.appType, prompt]);
+
+
+  function appendBuilderChatMessage(message) {
+    setBuilderChatHistory((prev) => [{
+      id: uid("chat"),
+      time: nowLabel(),
+      ...message,
+    }, ...prev].slice(0, 40));
+    setChatScrollTick((prev) => prev + 1);
+  }
+
+  async function submitBuilderChatMessage(rawMessage, modeOverride) {
+    const message = String(rawMessage || builderChatDraft).trim();
+    if (!message || isChatSubmitting) return;
+
+    const resolvedMode = modeOverride || chatComposerMode;
+    appendBuilderChatMessage({
+      role: "user",
+      text: message,
+      meta: projectId ? `Project ${projectId}` : "New project idea",
+    });
+    setBuilderChatDraft("");
+    setPrompt(message);
+    setUiMode("chat");
+    setSimpleFlowStep("builder");
+
+    try {
+      setIsChatSubmitting(true);
+      const summary = resolvedMode === "mutate"
+        ? await handleGeneratedAppMutation(message)
+        : await runBuilderBrain(message);
+
+      const systemLine = (summary?.systems || systemPlanner.systems || []).slice(0, 4).map((key) => formatSystemLabel(key)).join(", ");
+      const fileCount = summary?.generatedFileCount ?? generatedCodeFiles.length;
+      const routeCount = summary?.routeCount ?? generatedRoutes.length;
+      const projectLabel = summary?.projectId || projectId || "local";
+      const assistantParts = [
+        summary?.projectId ? `Project ${projectLabel} updated.` : (projectId ? `Continued project ${projectLabel}.` : "Builder updated the workspace."),
+        summary?.appType ? `App type: ${summary.appType}.` : null,
+        summary?.builderMode ? `Mode: ${summary.builderMode}.` : null,
+        fileCount ? `${fileCount} generated files ready.` : null,
+        routeCount ? `${routeCount} routes planned.` : null,
+        systemLine ? `Systems: ${systemLine}.` : null,
+        summary?.statusMessage || statusMessage || null,
+      ].filter(Boolean);
+
+      appendBuilderChatMessage({
+        role: "assistant",
+        text: assistantParts.join(" "),
+        meta: summary?.mutationSummary?.length
+          ? summary.mutationSummary.slice(0, 3).join(" • ")
+          : (summary?.builderInsight || builderInsight),
+      });
+    } catch (error) {
+      appendBuilderChatMessage({
+        role: "assistant",
+        text: `The builder hit an error while applying that idea: ${error.message}`,
+        meta: "You can retry the same prompt or switch to Pro mode to inspect details.",
+      });
+    } finally {
+      setIsChatSubmitting(false);
+    }
+  }
 
 
   function updateSimpleDraft(field, value) {
@@ -2190,15 +2270,38 @@ async function downloadDeploymentBundle(target) {
         ...prev,
       ]);
 
-      setBuilderInsight(
-        data.mutation_summary?.length
-          ? data.mutation_summary.join(" • ")
-          : `Builder improved the generated app with: ${instruction}.`
-      );
+      const mutationBuilderInsight = data.mutation_summary?.length
+        ? data.mutation_summary.join(" • ")
+        : `Builder improved the generated app with: ${instruction}.`;
+      const mutationStatusMessage = `Mutation loop applied: ${instruction}`;
+      setBuilderInsight(mutationBuilderInsight);
       setMutationLoopInput("");
-      setStatusMessage(`Mutation loop applied: ${instruction}`);
+      setStatusMessage(mutationStatusMessage);
+      return {
+        ok: true,
+        projectId: projectId || "",
+        generatedFileCount: generatedCodeFiles.length,
+        routeCount: nextRoutes.length,
+        componentCount: nextComponents.length,
+        mutationSummary: Array.isArray(data.mutation_summary) ? data.mutation_summary : [instruction],
+        builderInsight: mutationBuilderInsight,
+        statusMessage: mutationStatusMessage,
+        systems: systemPlanner.systems || [],
+      };
     } catch (error) {
-      setStatusMessage(`Mutation loop failed: ${error.message}`);
+      const mutationErrorMessage = `Mutation loop failed: ${error.message}`;
+      setStatusMessage(mutationErrorMessage);
+      return {
+        ok: false,
+        projectId: projectId || "",
+        generatedFileCount: generatedCodeFiles.length,
+        routeCount: generatedRoutes.length,
+        componentCount: generatedComponents.length,
+        mutationSummary: [error.message],
+        builderInsight: builderInsight,
+        statusMessage: mutationErrorMessage,
+        systems: systemPlanner.systems || [],
+      };
     } finally {
       setIsMutatingGeneratedApp(false);
     }
@@ -2378,12 +2481,25 @@ async function downloadDeploymentBundle(target) {
         ].join(" | "),
       });
 
-      setBuilderInsight(
-        data.mutation_summary?.length
-          ? data.mutation_summary.join(" • ")
-          : `Builder brain applied real workspace mutations: ${getLayoutLabel(nextLayout)}.`
-      );
-      setStatusMessage("Mutation engine v2 applied layout, files, routes, and components.");
+      const successStatusMessage = "Mutation engine v2 applied layout, files, routes, and components.";
+      const successBuilderInsight = data.mutation_summary?.length
+        ? data.mutation_summary.join(" • ")
+        : `Builder brain applied real workspace mutations: ${getLayoutLabel(nextLayout)}.`;
+      setBuilderInsight(successBuilderInsight);
+      setStatusMessage(successStatusMessage);
+      return {
+        ok: true,
+        projectId: data.project_id || projectId || "",
+        appType: data.app_type || nextAnalysis.appType,
+        builderMode: data.builder_mode || nextAnalysis.builderMode,
+        generatedFileCount: Array.isArray(data.files) ? data.files.length : generatedCodeFiles.length,
+        routeCount: nextRoutes.length,
+        componentCount: nextComponents.length,
+        mutationSummary: Array.isArray(data.mutation_summary) ? data.mutation_summary : [],
+        builderInsight: successBuilderInsight,
+        statusMessage: successStatusMessage,
+        systems: systemPlanner.systems || [],
+      };
     } catch (error) {
       setLayoutState(localLayoutMutation.layout);
       ensureModules(localRecommendedModules);
@@ -2417,10 +2533,23 @@ async function downloadDeploymentBundle(target) {
         ].join(" | "),
       });
 
-      setBuilderInsight(
-        `Mutation engine fallback applied local workspace changes: ${getLayoutLabel(localLayoutMutation.layout)}.`
-      );
-      setStatusMessage(`Backend mutate fallback: ${error.message}`);
+      const fallbackBuilderInsight = `Mutation engine fallback applied local workspace changes: ${getLayoutLabel(localLayoutMutation.layout)}.`;
+      const fallbackStatusMessage = `Backend mutate fallback: ${error.message}`;
+      setBuilderInsight(fallbackBuilderInsight);
+      setStatusMessage(fallbackStatusMessage);
+      return {
+        ok: false,
+        projectId: projectId || "",
+        appType: nextAnalysis.appType,
+        builderMode: nextAnalysis.builderMode,
+        generatedFileCount: 0,
+        routeCount: 0,
+        componentCount: 0,
+        mutationSummary: localLayoutMutation.notes,
+        builderInsight: fallbackBuilderInsight,
+        statusMessage: fallbackStatusMessage,
+        systems: systemPlanner.systems || [],
+      };
     } finally {
       setIsLoading(false);
     }
@@ -3034,6 +3163,26 @@ async function downloadDeploymentBundle(target) {
           .spot-grid, .wire-split { grid-template-columns: 1fr; }
           .simple-starter-grid { grid-template-columns: 1fr; }
         }
+
+        .chat-builder-shell { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; margin-bottom: 18px; }
+        .chat-thread { display: grid; gap: 12px; max-height: 860px; overflow: auto; padding-right: 6px; }
+        .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
+        .chat-message.user { background: rgba(102,217,239,.08); }
+        .chat-message.assistant { background: rgba(139,92,246,.08); }
+        .chat-meta-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .chat-role { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+        .chat-role .dot { width: 10px; height: 10px; border-radius: 999px; }
+        .chat-body { white-space: pre-wrap; line-height: 1.6; }
+        .chat-assist-meta { color: var(--muted); font-size: 13px; }
+        .chat-composer { display: grid; gap: 12px; }
+        .chat-composer textarea { min-height: 120px; resize: vertical; }
+        .chat-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
+        .chat-chip { border: 1px solid rgba(148,163,184,.16); background: rgba(255,255,255,.04); color: var(--text); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+        .chat-chip.active { background: rgba(102,217,239,.14); border-color: rgba(102,217,239,.35); }
+        .chat-side-stack { display: grid; gap: 18px; }
+        .chat-empty-state { border: 1px dashed rgba(148,163,184,.18); border-radius: 18px; padding: 18px; color: var(--muted); }
+        .chat-project-pill { display: inline-flex; align-items: center; gap: 8px; }
+        @media (max-width: 1120px) { .chat-builder-shell { grid-template-columns: 1fr; } }
       `}</style>
 
       <div className="topbar">
@@ -3045,6 +3194,7 @@ async function downloadDeploymentBundle(target) {
         <div className="topbar-actions">
           <div className="mode-toggle">
             <button className={`ghost-pill ${uiMode === "simple" ? "active" : ""}`} onClick={() => setUiMode("simple")}>Simple</button>
+            <button className={`ghost-pill ${uiMode === "chat" ? "active" : ""}`} onClick={() => setUiMode("chat")}>Chat</button>
             <button className={`ghost-pill ${uiMode === "pro" ? "active" : ""}`} onClick={() => setUiMode("pro")}>Pro</button>
           </div>
           <span className={`badge ${apiStatus === "connected" ? "ok" : apiStatus === "offline" ? "off" : "warn"}`}>
@@ -4138,6 +4288,134 @@ async function downloadDeploymentBundle(target) {
         Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, and the new system planner are preserved. New step: the builder now plans connected product systems before code generation.
       </div>
       </>
+      ) : uiMode === "chat" ? (
+        <div className="chat-builder-shell">
+          <div className="chat-side-stack">
+            <Panel
+              title="Chat Builder"
+              subtitle="Describe the app once, then keep evolving the same project with follow-up ideas."
+            >
+              <div className="chat-composer">
+                <div className="chat-chip-row">
+                  <button className={`chat-chip ${chatComposerMode === "evolve" ? "active" : ""}`} onClick={() => setChatComposerMode("evolve")}>Build / Evolve</button>
+                  <button className={`chat-chip ${chatComposerMode === "mutate" ? "active" : ""}`} onClick={() => setChatComposerMode("mutate")}>Mutate current files</button>
+                  {projectId ? <span className="pill chat-project-pill">Project · {projectId}</span> : <span className="pill chat-project-pill">No project yet</span>}
+                </div>
+                <textarea
+                  className="input"
+                  value={builderChatDraft}
+                  onChange={(e) => setBuilderChatDraft(e.target.value)}
+                  placeholder={projectId ? "Example: add billing, improve the dashboard, and keep the auth flow intact" : "Example: build an RV diagnostics app with login, scan history, and a dashboard"}
+                />
+                <div className="chat-chip-row">
+                  {builderChatQuickIdeas.map((idea) => (
+                    <button key={idea} className="chat-chip" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
+                  ))}
+                </div>
+                <div className="chat-chip-row">
+                  <button className="pill primary" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
+                    {isChatSubmitting ? "Working..." : projectId ? "Continue Project" : "Build from Idea"}
+                  </button>
+                  <button className="ghost-pill" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
+                    Quick mutate generated files
+                  </button>
+                  <button className="ghost-pill" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); }}>Clear chat</button>
+                </div>
+              </div>
+            </Panel>
+
+            <Panel
+              title="Conversation"
+              subtitle="Use natural language like Replit-style app building. The same project keeps evolving."
+            >
+              <div className="chat-thread" key={chatScrollTick}>
+                {builderChatHistory.length ? builderChatHistory.map((message) => (
+                  <div key={message.id} className={`chat-message ${message.role}`}>
+                    <div className="chat-meta-row">
+                      <div className="chat-role">
+                        <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
+                        {message.role === "user" ? "You" : "Builder"}
+                      </div>
+                      <span className="muted">{message.time}</span>
+                    </div>
+                    <div className="chat-body">{message.text}</div>
+                    {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
+                  </div>
+                )) : (
+                  <div className="chat-empty-state">
+                    Start with one idea, then keep sending follow-up improvements like “add auth”, “make it mobile”, or “export for Render”.
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="chat-side-stack">
+            <Panel title="Live project snapshot" subtitle="This stays in sync with your existing builder systems.">
+              <div className="card-grid">
+                <div className="card">
+                  <strong>App type</strong>
+                  <div className="muted">{featureState.appType}</div>
+                </div>
+                <div className="card">
+                  <strong>Builder mode</strong>
+                  <div className="muted">{featureState.builderMode}</div>
+                </div>
+                <div className="card">
+                  <strong>Files</strong>
+                  <div className="muted">{generatedCodeFiles.length}</div>
+                </div>
+                <div className="card">
+                  <strong>Systems</strong>
+                  <div className="muted">{(systemPlanner.systems || []).length}</div>
+                </div>
+              </div>
+              <div className="zone-chip-row" style={{ marginTop: 14 }}>
+                {(systemPlanner.systems || []).map((system) => (
+                  <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Preview + orchestration" subtitle="Current backend orchestration and generated app preview.">
+              <div className="card-grid">
+                <div className="card">
+                  <strong>Project</strong>
+                  <div className="muted">{projectId || "Not created yet"}</div>
+                </div>
+                <div className="card">
+                  <strong>Last orchestration</strong>
+                  <div className="muted">{latestOrchestrationEntry?.time || "Waiting"}</div>
+                </div>
+                <div className="card">
+                  <strong>Routes</strong>
+                  <div className="muted">{generatedRoutes.length}</div>
+                </div>
+                <div className="card">
+                  <strong>Components</strong>
+                  <div className="muted">{generatedComponents.length}</div>
+                </div>
+              </div>
+              {livePreviewDoc ? (
+                <iframe title="Chat Builder Preview" srcDoc={livePreviewDoc} style={{ width: "100%", minHeight: 420, border: "1px solid rgba(148,163,184,.14)", borderRadius: 18, marginTop: 14, background: "#07111f" }} />
+              ) : (
+                <div className="chat-empty-state" style={{ marginTop: 14 }}>Generate the first app version to see the live preview here.</div>
+              )}
+            </Panel>
+
+            <Panel title="Latest builder response" subtitle="Status, insight, and safe next actions.">
+              <div className="muted" style={{ marginBottom: 10 }}>{statusMessage}</div>
+              <div className="chat-empty-state" style={{ marginBottom: 12 }}>{builderInsight}</div>
+              <div className="chat-chip-row">
+                {nextBestActions.map((action) => (
+                  <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          </div>
+        </div>
       ) : null}
     </div>
   );
