@@ -525,6 +525,223 @@ function normalizeGeneratedFiles(files) {
     .filter((file) => file.path);
 }
 
+function inferLanguageFromPath(path) {
+  const lower = String(path || "").toLowerCase();
+  if (lower.endsWith(".jsx") || lower.endsWith(".js")) return "javascript";
+  if (lower.endsWith(".tsx") || lower.endsWith(".ts")) return "typescript";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".py")) return "python";
+  if (lower.endsWith(".css")) return "css";
+  if (lower.endsWith(".html")) return "html";
+  if (lower.endsWith(".txt")) return "text";
+  if (lower.endsWith(".env") || lower.includes(".env")) return "env";
+  return "code";
+}
+
+function detectProjectStructure(files) {
+  const paths = files.map((file) => String(file.path || ""));
+  const lowered = paths.map((path) => path.toLowerCase());
+  const hasFrontendRoot = lowered.some((path) => path.startsWith("frontend/"));
+  const hasBackendRoot = lowered.some((path) => path.startsWith("backend/"));
+  const hasSrcRoot = lowered.some((path) => path.startsWith("src/"));
+  const hasReactEntry = lowered.some((path) => /(frontend\/)?src\/main\.(jsx|js|tsx|ts)$/.test(path));
+  const hasReactApp = lowered.some((path) => /(frontend\/)?src\/app\.(jsx|js|tsx|ts)$/.test(path));
+  const hasFastApiFile = lowered.some((path) => path.endsWith("main.py") || path.endsWith("app.py") || path.includes("fastapi"));
+  const frontendRoot = hasFrontendRoot ? "frontend" : hasSrcRoot || hasReactEntry || hasReactApp ? "" : "";
+  const backendRoot = hasBackendRoot ? "backend" : hasFastApiFile && !hasReactEntry ? "" : hasFastApiFile ? "backend" : "";
+  return {
+    hasFrontend: hasReactEntry || hasReactApp || hasFrontendRoot || hasSrcRoot,
+    hasBackend: hasFastApiFile || hasBackendRoot,
+    frontendRoot,
+    backendRoot,
+    isMonorepo: hasFrontendRoot || hasBackendRoot,
+    usesReact: hasReactEntry || hasReactApp || hasSrcRoot,
+    usesFastAPI: hasFastApiFile || hasBackendRoot,
+  };
+}
+
+function joinProjectPath(root, file) {
+  return root ? `${root}/${file}` : file;
+}
+
+function buildFrontendPackageJson() {
+  return JSON.stringify(
+    {
+      name: "builder-generated-frontend",
+      private: true,
+      version: "0.1.0",
+      type: "module",
+      scripts: {
+        dev: "vite",
+        build: "vite build",
+        preview: "vite preview",
+      },
+      dependencies: {
+        react: "^18.3.1",
+        "react-dom": "^18.3.1",
+      },
+      devDependencies: {
+        vite: "^5.4.10",
+        "@vitejs/plugin-react": "^4.3.1",
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function buildBackendRequirements() {
+  return [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "python-multipart>=0.0.9,<1.0.0",
+    "pydantic>=2.8.0,<3.0.0",
+  ].join("\n");
+}
+
+function buildFrontendEnvExample() {
+  return [
+    "VITE_API_URL=http://127.0.0.1:8000",
+    "VITE_APP_TITLE=Builder Generated App",
+  ].join("\n");
+}
+
+function buildBackendEnvExample() {
+  return [
+    "OPENAI_API_KEY=your_key_here",
+    "ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173",
+    "APP_ENV=development",
+  ].join("\n");
+}
+
+function buildRootEnvExample(structure) {
+  const lines = ["PROJECT_NAME=builder-generated-project"];
+  if (structure.hasFrontend) {
+    lines.push("VITE_API_URL=http://127.0.0.1:8000");
+  }
+  if (structure.hasBackend) {
+    lines.push("OPENAI_API_KEY=your_key_here");
+  }
+  return lines.join("\n");
+}
+
+function buildIndexHtml() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Builder Generated App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`;
+}
+
+function buildGitIgnore(structure) {
+  const lines = [
+    "node_modules/",
+    "dist/",
+    ".DS_Store",
+    ".env",
+    ".env.local",
+    ".env.*.local",
+    "__pycache__/",
+    "*.pyc",
+    ".venv/",
+    "venv/",
+    ".idea/",
+    ".vscode/",
+  ];
+  if (structure.isMonorepo) {
+    lines.push("frontend/node_modules/", "frontend/dist/");
+  }
+  return [...new Set(lines)].join("\n");
+}
+
+function buildSmartSupportFiles({ files, prompt, appType, builderMode, routes, components, folderName }) {
+  const structure = detectProjectStructure(files);
+  const lowerPaths = new Set(files.map((file) => String(file.path || "").toLowerCase()));
+  const supportFiles = [];
+  const pushIfMissing = (path, content, language) => {
+    const normalizedPath = String(path || "").replace(/^\/+/, "");
+    if (!normalizedPath || lowerPaths.has(normalizedPath.toLowerCase())) return;
+    supportFiles.push({
+      path: normalizedPath,
+      content,
+      language: language || inferLanguageFromPath(normalizedPath),
+      generatedBy: "smart-package",
+    });
+    lowerPaths.add(normalizedPath.toLowerCase());
+  };
+
+  if (structure.hasFrontend) {
+    pushIfMissing(joinProjectPath(structure.frontendRoot, "package.json"), buildFrontendPackageJson(), "json");
+    pushIfMissing(joinProjectPath(structure.frontendRoot, ".env.example"), buildFrontendEnvExample(), "env");
+    const mainEntryVariants = [
+      joinProjectPath(structure.frontendRoot, "src/main.jsx"),
+      joinProjectPath(structure.frontendRoot, "src/main.js"),
+      joinProjectPath(structure.frontendRoot, "src/main.tsx"),
+      joinProjectPath(structure.frontendRoot, "src/main.ts"),
+    ].map((item) => item.toLowerCase());
+    const hasMainEntry = files.some((file) => mainEntryVariants.includes(String(file.path || "").toLowerCase()));
+    if (hasMainEntry) {
+      pushIfMissing(joinProjectPath(structure.frontendRoot, "index.html"), buildIndexHtml(), "html");
+    }
+  }
+
+  if (structure.hasBackend) {
+    pushIfMissing(joinProjectPath(structure.backendRoot, "requirements.txt"), buildBackendRequirements(), "text");
+    pushIfMissing(joinProjectPath(structure.backendRoot, ".env.example"), buildBackendEnvExample(), "env");
+  }
+
+  pushIfMissing(".env.example", buildRootEnvExample(structure), "env");
+  pushIfMissing(
+    ".gitignore",
+    buildGitIgnore(structure),
+    "text",
+  );
+
+  pushIfMissing(
+    "README.md",
+    buildProjectReadme({
+      appType,
+      builderMode,
+      prompt,
+      routes,
+      components,
+      files: [...files, ...supportFiles],
+      folderName,
+    }),
+    "markdown",
+  );
+
+  return supportFiles;
+}
+
+function augmentGeneratedFilesWithSmartPackage(files, context) {
+  const normalized = normalizeGeneratedFiles(files);
+  const projectSeed = context?.prompt || context?.folderName || context?.appType || "builder-project";
+  const folderName = sanitizeProjectName(projectSeed);
+  const supportFiles = buildSmartSupportFiles({
+    files: normalized,
+    prompt: context?.prompt,
+    appType: context?.appType,
+    builderMode: context?.builderMode,
+    routes: context?.routes,
+    components: context?.components,
+    folderName,
+  });
+  return [...normalized, ...supportFiles].map((file) => ({
+    ...file,
+    language: file.language || inferLanguageFromPath(file.path),
+  }));
+}
+
 function buildProjectReadme({ appType, builderMode, prompt, routes, components, files, folderName }) {
   const routeLines = Array.isArray(routes) && routes.length
     ? routes.map((route) => `- ${route.path} → ${route.component}`).join("\n")
@@ -533,6 +750,36 @@ function buildProjectReadme({ appType, builderMode, prompt, routes, components, 
   const componentLines = Array.isArray(components) && components.length
     ? components.map((component) => `- ${component.name}: ${component.purpose}`).join("\n")
     : "- No component summary was returned yet.";
+
+  const structure = detectProjectStructure(normalizeGeneratedFiles(files));
+  const frontendFolder = structure.frontendRoot || ".";
+  const backendFolder = structure.backendRoot || ".";
+  const installSteps = [];
+
+  if (structure.hasFrontend) {
+    installSteps.push(
+      `### Frontend (${frontendFolder})`,
+      `1. Open a terminal in \`${frontendFolder}\`.`,
+      "2. Run `npm install`.",
+      "3. Run `npm run dev`.",
+      "",
+    );
+  }
+
+  if (structure.hasBackend) {
+    installSteps.push(
+      `### Backend (${backendFolder})`,
+      `1. Open a terminal in \`${backendFolder}\`.`,
+      "2. Create a virtual environment.",
+      "3. Run `pip install -r requirements.txt`.",
+      "4. Run `uvicorn main:app --reload`.",
+      "",
+    );
+  }
+
+  if (!installSteps.length) {
+    installSteps.push("1. Download and extract this zip.", "2. Open the extracted folder in VS Code.");
+  }
 
   return `# ${folderName}
 
@@ -553,12 +800,18 @@ ${routeLines}
 
 ${componentLines}
 
+## Smart package system
+
+This bundle was prepared to be easier to open in VS Code.
+It can include package files such as \`package.json\`, \`requirements.txt\`, \`.env.example\`, \`.gitignore\`, and a starter \`index.html\` when needed.
+
 ## Open in VS Code
 
 1. Download and extract this zip.
 2. Open the extracted folder in VS Code.
-3. Install dependencies if the generated project includes a package.json.
-4. Start the generated app using the scripts defined inside that project.
+3. Use the instructions below based on the folders included in the project.
+
+${installSteps.join("\n")}
 `;
 }
 
@@ -1039,7 +1292,7 @@ export default function App() {
             <strong>${component.name}</strong>
             <span>${component.purpose}</span>
           </div>
-        `).join("")
+        `).join("\n")
       : `<div class="runner-empty">No generated components yet.</div>`;
 
     const fileCards = generatedCodeFiles.slice(0, 8).map((file) => `
@@ -1047,7 +1300,7 @@ export default function App() {
         <strong>${file.path}</strong>
         <span>${file.language || "code"}</span>
       </div>
-    `).join("");
+    `).join("\n");
 
     const previewDoc = `<!doctype html>
 <html>
@@ -1237,7 +1490,13 @@ export default function App() {
   }
 
   async function downloadProjectZipBundle() {
-    const files = normalizeGeneratedFiles(generatedCodeFiles);
+    const files = augmentGeneratedFilesWithSmartPackage(generatedCodeFiles, {
+      prompt,
+      appType: featureState.appType,
+      builderMode: featureState.builderMode,
+      routes: generatedRoutes,
+      components: generatedComponents,
+    });
     if (!files.length) {
       setStatusMessage("Generate code first so the zip can be created.");
       return;
@@ -1322,14 +1581,22 @@ export default function App() {
 
     if (!response.ok) throw new Error("Code generation request failed");
     const data = await response.json();
-    const files = Array.isArray(data.generated_files) ? data.generated_files : [];
+    const rawFiles = Array.isArray(data.generated_files) ? data.generated_files : [];
+    const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
+      prompt: sourcePrompt,
+      appType,
+      builderMode,
+      routes,
+      components,
+    });
     setGeneratedCodeFiles(files);
     setSelectedGeneratedFilePath(files[0]?.path || "");
     appendMutationLog({
       type: "code-generation",
       command: sourcePrompt,
-      details: `Generated ${files.length} code files.`,
+      details: `Generated ${files.length} code files including smart package support files.`,
     });
+    setStatusMessage(`Generated ${files.length} files with smart package support.`);
     return data;
   }
 
@@ -1508,7 +1775,7 @@ export default function App() {
 
     setBuilderInsight(
       layoutMutation.notes.length
-        ? layoutMutation.notes.join(" ")
+        ? layoutMutation.notes.join("\n")
         : "Command logged. No major layout mutation matched yet."
     );
     setStatusMessage("Command mutation applied.");
@@ -1681,7 +1948,7 @@ export default function App() {
     layoutState.dense ? "dense" : "",
   ]
     .filter(Boolean)
-    .join(" ");
+    .join("\n");
 
   return (
     <div className={rootClassNames}>
@@ -2517,7 +2784,7 @@ export default function App() {
                             onClick={() => setSelectedGeneratedFilePath(file.path)}
                           >
                             <strong>{file.path}</strong>
-                            <span>{file.language || "code"}</span>
+                            <span>{file.generatedBy === "smart-package" ? `smart package · ${file.language || "code"}` : file.language || "code"}</span>
                           </button>
                         )) : <div className="muted">Generate code to inspect real file contents.</div>}
                       </div>
@@ -2530,7 +2797,7 @@ export default function App() {
                           <div className="module-top">
                             <strong>{selectedGeneratedCodeFile.path}</strong>
                             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                              <span className="tag">{selectedGeneratedCodeFile.language || "code"}</span>
+                              <span className="tag">{selectedGeneratedCodeFile.generatedBy === "smart-package" ? `smart package · ${selectedGeneratedCodeFile.language || "code"}` : selectedGeneratedCodeFile.language || "code"}</span>
                               <button
                                 className="mini-btn"
                                 onClick={() => downloadSelectedGeneratedFile(selectedGeneratedCodeFile)}
