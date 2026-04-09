@@ -22,7 +22,7 @@ const STORAGE_KEYS = {
   builderChatDraft: "builder_chat_draft_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
-  runtimeSandboxPrefs: "builder_runtime_sandbox_prefs_v1",
+  rvMonetizationConfig: "builder_rv_monetization_config_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -270,6 +270,38 @@ const RV_CAMPING_PROFILES = [
   },
 ];
 
+const DEFAULT_RV_MONETIZATION_CONFIG = {
+  monthlyPrice: 9.99,
+  yearlyPrice: 69.99,
+  trialDays: 7,
+  affiliateTagCa: "rvinspector03-20",
+  affiliateTagUs: "rvinspectorpr-20",
+  premiumTemplatesOnly: false,
+  exportLeadMagnet: true,
+};
+
+const RV_PREMIUM_OFFERS = [
+  {
+    key: "pro-diagnostics",
+    label: "RV Pro Diagnostics",
+    priceHint: "$9.99/mo",
+    value: "Saved scan history, premium reports, and deeper AI troubleshooting flows.",
+  },
+  {
+    key: "power-planner-plus",
+    label: "Power Planner Plus",
+    priceHint: "$69.99/yr",
+    value: "Battery, solar, and inverter recommendations with cost ranges and affiliate-ready gear picks.",
+  },
+  {
+    key: "maintenance-club",
+    label: "Maintenance Club",
+    priceHint: "Lead magnet",
+    value: "Free checklist export that feeds paid reminders, history, and premium owner dashboard upgrades.",
+  },
+];
+
+
 const RV_AFFILIATE_ENGINE = [
   {
     key: "lifepo4_100",
@@ -386,6 +418,49 @@ function getRvAffiliateRecommendations(intel, templateKey = "rv_power") {
   }));
 }
 
+
+
+function buildAmazonAffiliateUrl(slug, monetizationConfig, locale = "ca") {
+  const base = locale === "us" ? "https://www.amazon.com/s" : "https://www.amazon.ca/s";
+  const tag = locale === "us" ? monetizationConfig?.affiliateTagUs : monetizationConfig?.affiliateTagCa;
+  const query = encodeURIComponent(slug || "rv accessories");
+  return `${base}?k=${query}${tag ? `&tag=${tag}` : ""}`;
+}
+
+function buildRvMonetizationPlan({ template, intelligence, recommendations, monetizationConfig }) {
+  const monthly = Number(monetizationConfig?.monthlyPrice || 9.99);
+  const yearly = Number(monetizationConfig?.yearlyPrice || 69.99);
+  const trialDays = Number(monetizationConfig?.trialDays || 7);
+  const affiliateCount = Array.isArray(recommendations) ? recommendations.length : 0;
+  const estimatedAov = intelligence?.estimatedCostHigh ? Math.max(199, Math.round(intelligence.estimatedCostHigh * 0.18)) : 299;
+  const commissionLow = Math.round(estimatedAov * 0.03);
+  const commissionHigh = Math.round(estimatedAov * 0.06);
+  const leadMagnet = monetizationConfig?.exportLeadMagnet
+    ? "Free exported RV plan/checklist used as the lead magnet into paid reminders or diagnostics."
+    : "Paid upsell is focused directly on premium template access and saved member dashboards.";
+  return {
+    headline: `${template?.label || "RV app"} monetization stack`,
+    subscription: {
+      monthly,
+      yearly,
+      trialDays,
+      pitch: `Start with ${trialDays}-day trial, then ${monthly.toFixed(2)}/mo or ${yearly.toFixed(2)}/yr for saved data, premium reports, and deeper RV guidance.`,
+    },
+    affiliate: {
+      picks: affiliateCount,
+      estimatedCommissionRange: `$${commissionLow}-$${commissionHigh}`,
+      strategy: affiliateCount
+        ? "Feature one main product, then 2-4 supporting add-ons based on battery, solar, inverter, and profile."
+        : "Use template-specific gear blocks once the planner has enough demand signals.",
+    },
+    leadMagnet,
+    paywallHooks: [
+      "Saved RV plans and scan history",
+      "Premium export / printable checklist",
+      "Advanced sizing and member dashboard",
+    ],
+  };
+}
 const SIMPLE_STYLE_OPTIONS = ["Dark glass", "Clean SaaS", "Builder Pro", "Minimal"];
 const SIMPLE_GENERATION_STAGES = [
   "Understanding what you want to build",
@@ -515,22 +590,6 @@ function saveToStorage(key, value) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(value));
 }
-
-function normalizeErrorMessage(error, fallback = "Something went wrong") {
-  if (!error) return fallback;
-  if (typeof error === "string") return error;
-  return error.message || fallback;
-}
-
-async function safeReadJson(response) {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { raw: text };
-  }
-}
-
 
 function slugify(text) {
   return String(text || "")
@@ -1850,6 +1909,7 @@ export default function App() {
   });
   const [selectedRvTemplateKey, setSelectedRvTemplateKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvTemplate, RV_SMART_TEMPLATES[0].key));
   const [rvCampingProfileKey, setRvCampingProfileKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvCampingProfile, RV_CAMPING_PROFILES[0].key));
+  const [rvMonetizationConfig, setRvMonetizationConfig] = useState(() => ({ ...DEFAULT_RV_MONETIZATION_CONFIG, ...loadFromStorage(STORAGE_KEYS.rvMonetizationConfig, DEFAULT_RV_MONETIZATION_CONFIG) }));
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
   const [generatedFileTree, setGeneratedFileTree] = useState([]);
@@ -1886,16 +1946,7 @@ export default function App() {
   const [chatScrollTick, setChatScrollTick] = useState(0);
   const [chatComposerMode, setChatComposerMode] = useState("evolve");
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
-
   const [deployExportTarget, setDeployExportTarget] = useState("");
-  const [runtimeSandboxSessionId, setRuntimeSandboxSessionId] = useState("");
-  const [runtimeSandboxUrl, setRuntimeSandboxUrl] = useState("");
-  const [runtimeSandboxStatus, setRuntimeSandboxStatus] = useState("idle");
-  const [runtimeSandboxError, setRuntimeSandboxError] = useState("");
-  const [runtimeSandboxMeta, setRuntimeSandboxMeta] = useState(null);
-  const [runtimeSandboxLogs, setRuntimeSandboxLogs] = useState([]);
-  const [isRunningRuntimeSandbox, setIsRunningRuntimeSandbox] = useState(false);
-  const [isReloadingRuntimeSandbox, setIsReloadingRuntimeSandbox] = useState(false);
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -1910,13 +1961,13 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleDraft, simpleDraft), [simpleDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.mutationVersions, mutationVersions), [mutationVersions]);
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.rvMonetizationConfig, rvMonetizationConfig), [rvMonetizationConfig]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvTemplate, selectedRvTemplateKey), [selectedRvTemplateKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvCampingProfile, rvCampingProfileKey), [rvCampingProfileKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxPrefs, runtimeSandboxPrefs), [runtimeSandboxPrefs]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1962,11 +2013,6 @@ export default function App() {
     }));
   }, [prompt, featureState.appType, featureState.builderMode, featureState.quickIdea, generatedRoutes, generatedComponents]);
 
-
-  useEffect(() => {
-    if (!runtimeSandboxSessionId) return;
-    reloadRuntimeSandbox();
-  }, [selectedPreviewRoute, previewAuthMode]);
   const analysis = useMemo(() => analyzePrompt(prompt), [prompt]);
   const computedSummary = useMemo(
     () => computeSummary(result, featureState.summaryStyle),
@@ -2007,6 +2053,15 @@ export default function App() {
     () => getRvAffiliateRecommendations(rvIntelligence, selectedRvTemplateKey),
     [rvIntelligence, selectedRvTemplateKey],
   );
+  const rvMonetizationPlan = useMemo(
+    () => buildRvMonetizationPlan({
+      template: selectedRvTemplate,
+      intelligence: rvIntelligence,
+      recommendations: rvAffiliateRecommendations,
+      monetizationConfig: rvMonetizationConfig,
+    }),
+    [selectedRvTemplate, rvIntelligence, rvAffiliateRecommendations, rvMonetizationConfig],
+  );
   const nextBestActions = useMemo(
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
@@ -2036,204 +2091,6 @@ export default function App() {
     [previewRoutes, selectedPreviewRoute],
   );
 
-
-
-  function normalizeRuntimePreviewUrl(url) {
-    if (!url) return "";
-    if (/^https?:\/\//i.test(url)) return url;
-    return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
-  }
-
-  async function runRuntimeSandbox(options = {}) {
-    if (!generatedCodeFiles.length) {
-      setRuntimeSandboxError("Generate the app first before starting the runtime sandbox.");
-      setRuntimeSandboxStatus("empty");
-      return null;
-    }
-
-    try {
-      setIsRunningRuntimeSandbox(true);
-      setRuntimeSandboxError("");
-      setRuntimeSandboxStatus("starting");
-      setStatusMessage("Starting runtime sandbox...");
-
-      const response = await fetch(`${API_BASE}/preview/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: options.sessionId || runtimeSandboxSessionId || undefined,
-          project_id: projectId || undefined,
-          prompt: options.prompt || prompt || featureState.quickIdea,
-          app_type: featureState.appType,
-          builder_mode: featureState.builderMode,
-          route: options.route || selectedPreviewRoute || activePreviewRoute?.path || "/",
-          auth_mode: options.authMode || previewAuthMode || "guest",
-          files: generatedCodeFiles,
-          routes: generatedRoutes,
-          components: generatedComponents,
-          systems: systemPlanner?.systems || [],
-        }),
-      });
-
-      const data = await safeReadJson(response);
-      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Runtime sandbox request failed");
-      const nextUrl = normalizeRuntimePreviewUrl(data.preview_url || "");
-
-      setRuntimeSandboxSessionId(data.session_id || "");
-      setRuntimeSandboxUrl(nextUrl);
-      setRuntimeSandboxStatus(data.status || "ready");
-      setRuntimeSandboxMeta(data);
-      setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
-      setStatusMessage(`Runtime sandbox ready${data.session_id ? ` · ${data.session_id}` : ""}`);
-      appendMutationLog({
-        type: "runtime-sandbox",
-        command: options.prompt || prompt || featureState.quickIdea,
-        details: `Sandbox ${data.session_id || "session"} ready on ${data.route || selectedPreviewRoute || "/"}.`,
-      });
-      return data;
-    } catch (error) {
-      setRuntimeSandboxError(error.message || "Runtime sandbox failed");
-      setRuntimeSandboxStatus("error");
-      setStatusMessage(`Runtime sandbox failed: ${error.message}`);
-      return null;
-    } finally {
-      setIsRunningRuntimeSandbox(false);
-    }
-  }
-
-  async function refreshRuntimeSandboxStatus() {
-    if (!runtimeSandboxSessionId) return null;
-    try {
-      const response = await fetch(`${API_BASE}/preview/status/${runtimeSandboxSessionId}`);
-      const data = await safeReadJson(response);
-      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox status request failed");
-      setRuntimeSandboxStatus(data.status || "ready");
-      setRuntimeSandboxMeta(data);
-      if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
-      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
-      if (Array.isArray(data.errors) && data.errors.length) {
-        setRuntimeSandboxError(data.errors.join(" · "));
-        if (runtimeSandboxPrefs.autoRecover && runtimeSandboxRecoveryCount < 1 && (data.status === "error" || data.status === "degraded")) {
-          setRuntimeSandboxRecoveryCount((count) => count + 1);
-          recoverRuntimeSandbox();
-        }
-      } else {
-        setRuntimeSandboxError("");
-        setRuntimeSandboxRecoveryCount(0);
-      }
-      return data;
-    } catch (error) {
-      setRuntimeSandboxError(normalizeErrorMessage(error, "Sandbox status failed"));
-      return null;
-    }
-  }
-
-  async function fetchRuntimeSandboxLogs() {
-    if (!runtimeSandboxSessionId) return null;
-    try {
-      const response = await fetch(`${API_BASE}/preview/logs/${runtimeSandboxSessionId}`);
-      const data = await safeReadJson(response);
-      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox logs request failed");
-      setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
-      return data;
-    } catch (error) {
-      setRuntimeSandboxError(error.message || "Sandbox logs failed");
-      return null;
-    }
-  }
-
-  async function reloadRuntimeSandbox() {
-    if (!runtimeSandboxSessionId) {
-      return runRuntimeSandbox();
-    }
-    try {
-      setIsReloadingRuntimeSandbox(true);
-      setRuntimeSandboxError("");
-      setStatusMessage("Reloading sandbox...");
-      const response = await fetch(`${API_BASE}/preview/reload/${runtimeSandboxSessionId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: runtimeSandboxSessionId,
-          project_id: projectId || undefined,
-          prompt: prompt || featureState.quickIdea,
-          app_type: featureState.appType,
-          builder_mode: featureState.builderMode,
-          route: selectedPreviewRoute || activePreviewRoute?.path || "/",
-          auth_mode: previewAuthMode || "guest",
-          files: generatedCodeFiles,
-          routes: generatedRoutes,
-          components: generatedComponents,
-          systems: systemPlanner?.systems || [],
-        }),
-      });
-      const data = await safeReadJson(response);
-      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox reload failed");
-      setRuntimeSandboxStatus(data.status || "ready");
-      setRuntimeSandboxMeta(data);
-      setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
-      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
-      setStatusMessage("Sandbox reloaded.");
-      return data;
-    } catch (error) {
-      setRuntimeSandboxError(error.message || "Sandbox reload failed");
-      return null;
-    } finally {
-      setIsReloadingRuntimeSandbox(false);
-    }
-  }
-
-  async function recoverRuntimeSandbox() {
-    if (!runtimeSandboxSessionId) return null;
-    try {
-      setStatusMessage("Recovering sandbox...");
-      const response = await fetch(`${API_BASE}/preview/recover/${runtimeSandboxSessionId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await safeReadJson(response);
-      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox recovery failed");
-      setRuntimeSandboxStatus(data.status || "ready");
-      setRuntimeSandboxMeta(data);
-      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
-      if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
-      setRuntimeSandboxError(Array.isArray(data.errors) && data.errors.length ? data.errors.join(" · ") : "");
-      setStatusMessage("Sandbox recovery completed.");
-      return data;
-    } catch (error) {
-      setRuntimeSandboxError(normalizeErrorMessage(error, "Sandbox recovery failed"));
-      return null;
-    }
-  }
-
-  async function resetRuntimeSandbox() {
-    if (!runtimeSandboxSessionId) return;
-    try {
-      await fetch(`${API_BASE}/preview/reset`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: runtimeSandboxSessionId }),
-      });
-    } catch (error) {
-      // ignore reset network errors and clear local state anyway
-    }
-    setRuntimeSandboxSessionId("");
-    setRuntimeSandboxUrl("");
-    setRuntimeSandboxStatus("idle");
-    setRuntimeSandboxMeta(null);
-    setRuntimeSandboxLogs([]);
-    setRuntimeSandboxError("");
-    setRuntimeSandboxRecoveryCount(0);
-    setStatusMessage("Runtime sandbox reset.");
-  }
-
-  useEffect(() => {
-    if (!runtimeSandboxSessionId || !runtimeSandboxPrefs.autoPoll) return undefined;
-    const timer = window.setInterval(() => {
-      refreshRuntimeSandboxStatus();
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [runtimeSandboxSessionId, runtimeSandboxPrefs.autoPoll]);
   useEffect(() => {
     if (!previewRoutes.length) return;
     if (!previewRoutes.some((route) => route.path === selectedPreviewRoute)) {
@@ -2700,6 +2557,14 @@ export default function App() {
     setSimpleDraft((prev) => ({ ...prev, [field]: value }));
   }
 
+  function updateRvMonetization(field, value) {
+    setRvMonetizationConfig((prev) => ({
+      ...prev,
+      [field]: typeof prev[field] === "number" ? Number(value) : value,
+    }));
+  }
+
+
   function selectSimpleStarter(starterKey) {
     const starter = getSimpleStarterByKey(starterKey);
     setSimpleDraft((prev) => ({
@@ -2798,6 +2663,9 @@ export default function App() {
       feature_state: featureState,
       current_layout: layoutState,
       active_modules: activeModules,
+      rv_template_key: selectedRvTemplateKey,
+      rv_camping_profile: rvCampingProfileKey,
+      monetization_config: rvMonetizationConfig,
     };
 
     const response = await fetch(`${API_BASE}/orchestrate`, {
@@ -3064,6 +2932,9 @@ async function downloadDeploymentBundle(target) {
           current_files: generatedCodeFiles,
           current_routes: generatedRoutes,
           current_components: generatedComponents,
+          rv_template_key: selectedRvTemplateKey,
+          rv_camping_profile: rvCampingProfileKey,
+          monetization_config: rvMonetizationConfig,
         }),
       });
 
@@ -3225,6 +3096,9 @@ async function downloadDeploymentBundle(target) {
           components,
           system_planner: systemPlanner,
           system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
+          rv_template_key: selectedRvTemplateKey,
+          rv_camping_profile: rvCampingProfileKey,
+          monetization_config: rvMonetizationConfig,
         }),
       });
 
@@ -4189,6 +4063,81 @@ async function downloadDeploymentBundle(target) {
                 </div>
               </Panel>
 
+              <Panel title="RV Monetization Layer" subtitle="Turn each RV template into recurring revenue, affiliate clicks, and lead capture." compact>
+                <div className="simple-builder-grid">
+                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                    <div className="module-top">
+                      <strong>Subscription stack</strong>
+                      <span className="tag">{rvMonetizationPlan.subscription.trialDays}-day trial</span>
+                    </div>
+                    <div className="muted">{rvMonetizationPlan.subscription.pitch}</div>
+                    <label className="simple-field">
+                      <span>Monthly price</span>
+                      <input className="text-input" type="number" step="0.01" value={rvMonetizationConfig.monthlyPrice} onChange={(e) => updateRvMonetization("monthlyPrice", e.target.value)} />
+                    </label>
+                    <label className="simple-field">
+                      <span>Yearly price</span>
+                      <input className="text-input" type="number" step="0.01" value={rvMonetizationConfig.yearlyPrice} onChange={(e) => updateRvMonetization("yearlyPrice", e.target.value)} />
+                    </label>
+                    <label className="simple-field">
+                      <span>Trial days</span>
+                      <input className="text-input" type="number" step="1" value={rvMonetizationConfig.trialDays} onChange={(e) => updateRvMonetization("trialDays", e.target.value)} />
+                    </label>
+                    <div className="zone-chip-row">
+                      {rvMonetizationPlan.paywallHooks.map((hook) => (
+                        <span key={hook} className="zone-chip">{hook}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                    <div className="module-top">
+                      <strong>Affiliate engine</strong>
+                      <span className="tag">{rvMonetizationPlan.affiliate.estimatedCommissionRange}</span>
+                    </div>
+                    <div className="muted">{rvMonetizationPlan.affiliate.strategy}</div>
+                    <label className="simple-field">
+                      <span>Amazon.ca tag</span>
+                      <input className="text-input" value={rvMonetizationConfig.affiliateTagCa} onChange={(e) => updateRvMonetization("affiliateTagCa", e.target.value)} />
+                    </label>
+                    <label className="simple-field">
+                      <span>Amazon.com tag</span>
+                      <input className="text-input" value={rvMonetizationConfig.affiliateTagUs} onChange={(e) => updateRvMonetization("affiliateTagUs", e.target.value)} />
+                    </label>
+                    <div className="module-list">
+                      {rvAffiliateRecommendations.map((item) => (
+                        <div key={`mon-${item.key}`} className="module-item">
+                          <div className="module-top">
+                            <strong>{item.title}</strong>
+                            <span className="tag">{item.cta}</span>
+                          </div>
+                          <div className="muted">{item.fit}</div>
+                          <div className="zone-chip-row">
+                            <a className="pill" href={buildAmazonAffiliateUrl(item.slug || item.title, rvMonetizationConfig, "ca")} target="_blank" rel="noreferrer">Amazon.ca</a>
+                            <a className="pill" href={buildAmazonAffiliateUrl(item.slug || item.title, rvMonetizationConfig, "us")} target="_blank" rel="noreferrer">Amazon.com</a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="simple-builder-grid" style={{ marginTop: 12 }}>
+                  {RV_PREMIUM_OFFERS.map((offer) => (
+                    <div key={offer.key} className="panel-card compact" style={{ display: "grid", gap: 8 }}>
+                      <div className="module-top">
+                        <strong>{offer.label}</strong>
+                        <span className="tag">{offer.priceHint}</span>
+                      </div>
+                      <div className="muted">{offer.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                  <span className="zone-chip">Lead magnet · {rvMonetizationPlan.leadMagnet}</span>
+                  <span className="zone-chip">Featured picks · {rvMonetizationPlan.affiliate.picks}</span>
+                  <span className="zone-chip">Template · {selectedRvTemplate.label}</span>
+                </div>
+              </Panel>
+
               </Panel>
 
               <div className="simple-starter-grid">
@@ -4667,37 +4616,7 @@ async function downloadDeploymentBundle(target) {
                         </div>
                       </div>
                     ) : null}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
-                      <button
-                        className="mini-btn"
-                        onClick={() => runRuntimeSandbox()}
-                        disabled={!generatedCodeFiles.length || isRunningRuntimeSandbox}
-                      >
-                        {isRunningRuntimeSandbox ? "Starting sandbox..." : "Run sandbox"}
-                      </button>
-                      <button
-                        className="mini-btn"
-                        onClick={() => reloadRuntimeSandbox()}
-                        disabled={!generatedCodeFiles.length || isReloadingRuntimeSandbox}
-                      >
-                        {isReloadingRuntimeSandbox ? "Reloading sandbox..." : runtimeSandboxUrl ? "Reload sandbox" : "Run sandbox"}
-                      </button>
-                      <button
-                        className="mini-btn"
-                        onClick={() => resetRuntimeSandbox()}
-                        disabled={!runtimeSandboxSessionId}
-                      >
-                        Reset sandbox
-                      </button>
-                    </div>
-                    {runtimeSandboxUrl ? (
-                      <iframe
-                        title="Generated app runtime sandbox"
-                        className="live-preview-frame"
-                        src={runtimeSandboxUrl}
-                        sandbox="allow-scripts allow-same-origin"
-                      />
-                    ) : livePreviewDoc ? (
+                    {livePreviewDoc ? (
                       <iframe
                         title="Generated app live preview"
                         className="live-preview-frame"
@@ -4706,50 +4625,9 @@ async function downloadDeploymentBundle(target) {
                       />
                     ) : (
                       <div className="muted" style={{ marginTop: 12 }}>
-                        Generate code to render a live preview shell here. Runtime sandbox phase 3 can now prepare a temp project, attempt npm install/build, and serve a built static preview when the environment allows it.
+                        Generate code to render a live preview shell here.
                       </div>
                     )}
-
-                    {runtimeSandboxSessionId ? (
-                      <div className="result-box" style={{ marginTop: 14 }}>
-                        <div className="module-top">
-                          <strong>Runtime sandbox logs</strong>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                            {runtimeSandboxMeta?.manifest_url ? (
-                              <a className="mini-btn" href={normalizeRuntimePreviewUrl(runtimeSandboxMeta.manifest_url)} target="_blank" rel="noreferrer">
-                                Open manifest
-                              </a>
-                            ) : null}
-                            <button className="mini-btn" onClick={() => fetchRuntimeSandboxLogs()}>
-                              Refresh logs
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-                          <span className="tag">Sandbox: {runtimeSandboxStatus}</span>
-                          {runtimeSandboxSessionId ? <span className="tag">Session {runtimeSandboxSessionId.slice(0, 8)}</span> : null}
-                          {runtimeSandboxMeta?.runtime_mode ? <span className="tag">{runtimeSandboxMeta.runtime_mode}</span> : null}
-                          {runtimeSandboxMeta?.project_dir ? <span className="tag">Temp project ready</span> : null}
-                          {runtimeSandboxMeta?.build_dir ? <span className="tag">Build ready</span> : null}
-                          {runtimeSandboxError ? <span className="tag" style={{ color: "#fecaca" }}>{runtimeSandboxError}</span> : null}
-                        </div>
-                        {runtimeSandboxMeta?.project_dir ? (
-                          <p className="muted" style={{ marginTop: 8 }}>
-                            Temp project prepared at: {runtimeSandboxMeta.project_dir}
-                            {runtimeSandboxMeta?.build_dir ? ` · Static build: ${runtimeSandboxMeta.build_dir}` : ""}
-                          </p>
-                        ) : null}
-                        {runtimeSandboxLogs.length ? (
-                          <pre className="code-preview" style={{ marginTop: 12 }}>
-{runtimeSandboxLogs.join("\n")}
-                          </pre>
-                        ) : (
-                          <div className="muted" style={{ marginTop: 12 }}>
-                            Sandbox logs will appear here after the runner prepares the temp project and attempts a build.
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
 
                     <div className="result-box" style={{ marginTop: 14 }}>
                       <div className="module-top">
