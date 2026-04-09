@@ -1388,6 +1388,69 @@ function buildPreviewPageSummary(currentRoute, authState, featureState, prompt) 
   return `${pageName} · ${routePath}. ${authLine} ${prompt ? `Idea: ${prompt}.` : ""}`;
 }
 
+function getPreviewProductTheme(featureState, authState, currentRoute) {
+  const appType = featureState?.appType || "tool app";
+  const routePath = currentRoute?.path || "/";
+
+  if (appType === "admin panel") {
+    return {
+      tone: "admin",
+      eyebrow: "Premium admin workspace",
+      heroTitle: "Operations dashboard preview",
+      heroCopy: "A sharper admin shell with metrics, navigation, and an operator-first layout.",
+      primaryLabel: authState?.enabled ? "Review dashboard flow" : "Open dashboard preview",
+      accentA: "#7dd3fc",
+      accentB: "#8b5cf6",
+      surface: "linear-gradient(180deg, rgba(15,23,42,.96), rgba(17,24,39,.92))",
+      navLabel: "Workspace",
+      highlights: ["KPI cards", "Navigation rail", "Recent activity", "Operator tools"],
+    };
+  }
+
+  if (appType === "assistant app") {
+    return {
+      tone: "assistant",
+      eyebrow: "Premium assistant shell",
+      heroTitle: routePath.includes("login") ? "Assistant access flow" : "AI workspace preview",
+      heroCopy: "A conversation-first app shell with actions, memory, and a cleaner copilot feel.",
+      primaryLabel: authState?.enabled ? "Open assistant flow" : "Preview assistant",
+      accentA: "#22d3ee",
+      accentB: "#6366f1",
+      surface: "linear-gradient(180deg, rgba(8,47,73,.92), rgba(15,23,42,.92))",
+      navLabel: "Tools",
+      highlights: ["Conversation pane", "Action rail", "Saved context", "Prompt shortcuts"],
+    };
+  }
+
+  if (appType === "content app") {
+    return {
+      tone: "content",
+      eyebrow: "Premium content studio",
+      heroTitle: "Editorial flow preview",
+      heroCopy: "A more polished studio feel with editor, preview, and structured document surfaces.",
+      primaryLabel: "Open studio preview",
+      accentA: "#f59e0b",
+      accentB: "#ef4444",
+      surface: "linear-gradient(180deg, rgba(69,26,3,.92), rgba(28,25,23,.92))",
+      navLabel: "Sections",
+      highlights: ["Editor shell", "Live preview", "Notes lane", "Publishing flow"],
+    };
+  }
+
+  return {
+    tone: "tool",
+    eyebrow: "Premium utility workflow",
+    heroTitle: "Tool app preview",
+    heroCopy: "A cleaner utility layout focused on conversion, clarity, and a more product-like result surface.",
+    primaryLabel: authState?.enabled ? "Open current flow" : "Explore generated app",
+    accentA: "#34d399",
+    accentB: "#14b8a6",
+    surface: "linear-gradient(180deg, rgba(6,78,59,.92), rgba(15,23,42,.92))",
+    navLabel: "Flow",
+    highlights: ["Input step", "Result card", "Export path", "Saved history"],
+  };
+}
+
 function extractOrchestratedFiles(payload) {
   const candidates = [
     ...(Array.isArray(payload?.files) ? payload.files : []),
@@ -1653,23 +1716,6 @@ export default function App() {
   }, [simpleFlowStep, simplePendingPrompt]);
 
   useEffect(() => {
-    if (!previewRoutes.length) return;
-    if (!previewRoutes.some((route) => route.path === selectedPreviewRoute)) {
-      setSelectedPreviewRoute(previewRoutes[0].path);
-    }
-  }, [previewRoutes, selectedPreviewRoute]);
-
-  useEffect(() => {
-    if (!previewAuthState.enabled && previewAuthMode !== "guest") {
-      setPreviewAuthMode("guest");
-      return;
-    }
-    if (previewAuthState.enabled && previewAuthMode === "guest") {
-      setPreviewAuthMode(previewAuthState.hasAdmin ? "member" : "member");
-    }
-  }, [previewAuthState.enabled, previewAuthState.hasAdmin, previewAuthMode]);
-
-  useEffect(() => {
     setSystemPlanner((previous) => inferSystemPlanner({
       prompt,
       appType: featureState.appType,
@@ -1725,6 +1771,23 @@ export default function App() {
     () => previewRoutes.find((route) => route.path === selectedPreviewRoute) || previewRoutes[0] || null,
     [previewRoutes, selectedPreviewRoute],
   );
+
+  useEffect(() => {
+    if (!previewRoutes.length) return;
+    if (!previewRoutes.some((route) => route.path === selectedPreviewRoute)) {
+      setSelectedPreviewRoute(previewRoutes[0].path);
+    }
+  }, [previewRoutes, selectedPreviewRoute]);
+
+  useEffect(() => {
+    if (!previewAuthState.enabled && previewAuthMode !== "guest") {
+      setPreviewAuthMode("guest");
+      return;
+    }
+    if (previewAuthState.enabled && previewAuthMode === "guest") {
+      setPreviewAuthMode("member");
+    }
+  }, [previewAuthState.enabled, previewAuthState.hasAdmin, previewAuthMode]);
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
@@ -1796,6 +1859,10 @@ export default function App() {
           ? "Authenticated admin shell"
           : "Authenticated member shell"
       : "Guest preview shell";
+    const productTheme = getPreviewProductTheme(featureState, previewAuthState, currentRoute);
+    const highlightCards = productTheme.highlights.map((item) => `
+      <div class="runner-highlight">${escapePreviewHtml(item)}</div>
+    `).join("");
 
     const previewDoc = `<!doctype html>
 <html>
@@ -1805,6 +1872,11 @@ export default function App() {
     <title>${escapePreviewHtml(previewTitle)}</title>
     <style>
       ${cssFile?.content || ""}
+      :root {
+        --runner-accent-a: ${productTheme.accentA};
+        --runner-accent-b: ${productTheme.accentB};
+        --runner-surface: ${productTheme.surface};
+      }
       body {
         min-height: 100vh;
       }
@@ -1817,7 +1889,7 @@ export default function App() {
       .runner-hero,
       .runner-panel {
         border: 1px solid rgba(148,163,184,.16);
-        background: rgba(13, 25, 43, 0.88);
+        background: var(--runner-surface, rgba(13, 25, 43, 0.88));
         border-radius: 20px;
         padding: 18px;
         color: #e5eefc;
@@ -1860,8 +1932,8 @@ export default function App() {
       }
       .runner-route.active,
       .runner-auth-pill.active {
-        border-color: rgba(102,217,239,.45);
-        box-shadow: 0 0 0 1px rgba(102,217,239,.18) inset;
+        border-color: color-mix(in srgb, var(--runner-accent-a, #66d9ef) 55%, transparent);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--runner-accent-a, #66d9ef) 25%, transparent) inset;
       }
       .runner-sim-shell {
         border: 1px solid rgba(148,163,184,.14);
@@ -1938,9 +2010,47 @@ export default function App() {
         border-radius: 999px;
         padding: 12px 18px;
         font-weight: 700;
-        background: linear-gradient(135deg, #66d9ef, #8b5cf6);
+        background: linear-gradient(135deg, var(--runner-accent-a, #66d9ef), var(--runner-accent-b, #8b5cf6));
         color: #07111f;
         margin-top: 12px;
+      }
+
+      .runner-hero-copy {
+        max-width: 760px;
+        color: #c9d7ee;
+      }
+      .runner-hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .runner-meta-pill,
+      .runner-highlight {
+        border: 1px solid rgba(148,163,184,.14);
+        border-radius: 999px;
+        padding: 9px 12px;
+        background: rgba(255,255,255,.04);
+        color: #dbe7fb;
+      }
+      .runner-highlight-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .runner-summary-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .runner-section-label {
+        color: #93a4bf;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
       }
       @media (max-width: 900px) {
         .runner-grid,
@@ -1953,12 +2063,18 @@ export default function App() {
   <body>
     <div class="runner-shell">
       <section class="runner-hero">
-        <div class="pill">${escapePreviewHtml(previewTitle)}</div>
-        <h1 style="margin:12px 0 6px;">${escapePreviewHtml(prompt || "Generated app preview")}</h1>
-        <p class="runner-muted">Live preview runner for ${escapePreviewHtml(currentRoute?.path || "/")}. ${escapePreviewHtml(authBanner)}.</p>
+        <div class="pill">${escapePreviewHtml(productTheme.eyebrow)}</div>
+        <h1 style="margin:12px 0 6px;">${escapePreviewHtml(productTheme.heroTitle)}</h1>
+        <p class="runner-hero-copy">${escapePreviewHtml(productTheme.heroCopy)}</p>
+        <div class="runner-hero-meta">
+          <div class="runner-meta-pill">${escapePreviewHtml(previewTitle)}</div>
+          <div class="runner-meta-pill">${escapePreviewHtml(currentRoute?.path || "/")}</div>
+          <div class="runner-meta-pill">${escapePreviewHtml(authBanner)}</div>
+        </div>
         <div class="runner-routes">${routeTabs}</div>
         <div class="runner-auth">${authPills}</div>
-        <button class="runner-button">${previewAuthState.enabled ? "Open current flow" : "Explore generated app"}</button>
+        <div class="runner-highlight-grid">${highlightCards}</div>
+        <button class="runner-button">${escapePreviewHtml(productTheme.primaryLabel)}</button>
       </section>
 
       <section class="runner-panel">
@@ -1973,7 +2089,10 @@ export default function App() {
             </aside>
             <div class="runner-sim-content">
               <div class="runner-summary">
-                <strong>Current page summary</strong>
+                <div class="runner-summary-head">
+                  <strong>Current page summary</strong>
+                  <span class="runner-section-label">${escapePreviewHtml(productTheme.navLabel)}</span>
+                </div>
                 <p class="runner-muted" style="margin:8px 0 0;">${pageSummary}</p>
               </div>
               <div class="runner-kpis">
