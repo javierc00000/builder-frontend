@@ -20,6 +20,10 @@ const STORAGE_KEYS = {
   orchestrationHistory: "builder_orchestration_history_v1",
   builderChatHistory: "builder_chat_history_v1",
   builderChatDraft: "builder_chat_draft_v1",
+  rvTemplate: "builder_rv_template_v1",
+  rvCampingProfile: "builder_rv_camping_profile_v1",
+  runtimeSandboxSession: "builder_runtime_sandbox_session_v1",
+  runtimeSandboxUrl: "builder_runtime_sandbox_url_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -181,6 +185,208 @@ const SIMPLE_STARTERS = [
     goalPlaceholder: "Describe the app you want to create",
   },
 ];
+const RV_SMART_TEMPLATES = [
+  {
+    key: "rv_diagnostics",
+    label: "RV Diagnostics",
+    badge: "Flagship",
+    description: "Scan-driven diagnostics app with login, saved scan history, dashboard, and AI help.",
+    starterKey: "assistant",
+    style: "Builder Pro",
+    systems: ["auth", "dashboard", "storage", "ai_tools", "tools"],
+    prompt: "build an RV diagnostics app with login, saved scan history, dashboard, AI scan assistant, and technician-friendly results",
+    goal: "Help RV owners scan labels, save diagnostic reports, and review problems from one dashboard",
+  },
+  {
+    key: "rv_power",
+    label: "Battery & Solar Planner",
+    badge: "Affiliate",
+    description: "Battery planner with appliance inputs, saved plans, solar sizing, and affiliate-ready recommendations.",
+    starterKey: "tool",
+    style: "Dark glass",
+    systems: ["dashboard", "storage", "tools", "content"],
+    prompt: "build an RV battery and solar planner with saved plans, appliance inputs, dashboard cards, affiliate suggestions, and export report",
+    goal: "Calculate battery and solar setups for RV trips and recommend the right gear",
+  },
+  {
+    key: "rv_maintenance",
+    label: "Maintenance Tracker",
+    badge: "Retention",
+    description: "Service reminders, maintenance history, dashboard, and protected account pages for RV owners.",
+    starterKey: "dashboard",
+    style: "Clean SaaS",
+    systems: ["auth", "dashboard", "storage", "settings"],
+    prompt: "build an RV maintenance tracker with login, service reminders, maintenance history, profile settings, and dashboard overview",
+    goal: "Keep RV owners coming back with reminders, history, and organized service records",
+  },
+  {
+    key: "rv_trip",
+    label: "Campground & Trip Planner",
+    badge: "Lifestyle",
+    description: "Trip planning workspace with campground flow, saved itineraries, and member dashboard.",
+    starterKey: "dashboard",
+    style: "Minimal",
+    systems: ["auth", "dashboard", "storage", "tools", "content"],
+    prompt: "build an RV trip planner with login, saved itineraries, campground tools, route dashboard, and trip notes",
+    goal: "Plan RV trips, save campground ideas, and keep trip notes in one place",
+  },
+];
+
+function getRvTemplateByKey(key) {
+  return RV_SMART_TEMPLATES.find((item) => item.key === key) || RV_SMART_TEMPLATES[0];
+}
+
+const RV_CAMPING_PROFILES = [
+  {
+    key: "weekend",
+    label: "Weekend",
+    demandMultiplier: 1,
+    solarMultiplier: 1,
+    affiliateFocus: "starter",
+    note: "Balanced weekend load with moderate off-grid demand.",
+  },
+  {
+    key: "boondock",
+    label: "Boondock",
+    demandMultiplier: 1.2,
+    solarMultiplier: 1.15,
+    affiliateFocus: "off-grid",
+    note: "Extra reserve for longer boondocking and saved energy margin.",
+  },
+  {
+    key: "summer",
+    label: "Hot Weather",
+    demandMultiplier: 1.35,
+    solarMultiplier: 1.1,
+    affiliateFocus: "cooling",
+    note: "Higher fan and cooling demand for hotter campground days.",
+  },
+  {
+    key: "shoulder",
+    label: "Shoulder Season",
+    demandMultiplier: 0.92,
+    solarMultiplier: 0.95,
+    affiliateFocus: "efficient",
+    note: "Lower overall demand with milder temperatures.",
+  },
+];
+
+const RV_AFFILIATE_ENGINE = [
+  {
+    key: "lifepo4_100",
+    title: "100Ah LiFePO4 Battery",
+    category: "battery",
+    fit: "Great first upgrade for lighter weekend loads and maintenance-free use.",
+    triggers: { minBatteryAh: 90, maxBatteryAh: 170 },
+  },
+  {
+    key: "lifepo4_200",
+    title: "200Ah LiFePO4 Battery Bank",
+    category: "battery",
+    fit: "Better when your planner starts pushing beyond a basic overnight setup.",
+    triggers: { minBatteryAh: 170 },
+  },
+  {
+    key: "solar_200",
+    title: "200W Solar Starter Kit",
+    category: "solar",
+    fit: "Good entry kit for moderate RV charging needs and lighter appliance mixes.",
+    triggers: { minSolarWatts: 180, maxSolarWatts: 360 },
+  },
+  {
+    key: "solar_400",
+    title: "400W Solar Expansion Kit",
+    category: "solar",
+    fit: "Makes more sense for boondocking, hot weather, and higher daily loads.",
+    triggers: { minSolarWatts: 360 },
+  },
+  {
+    key: "inverter_2000",
+    title: "2000W Pure Sine Inverter",
+    category: "inverter",
+    fit: "Good when laptops, TVs, and medium AC appliances need clean power.",
+    triggers: { minInverterWatts: 1500, maxInverterWatts: 2400 },
+  },
+  {
+    key: "inverter_3000",
+    title: "3000W Pure Sine Inverter",
+    category: "inverter",
+    fit: "Best for microwave-heavy or high-surge RV setups.",
+    triggers: { minInverterWatts: 2400 },
+  },
+  {
+    key: "monitor",
+    title: "Battery Monitor + Shunt",
+    category: "monitor",
+    fit: "Helps RV owners actually understand battery usage and stop guessing.",
+    triggers: { always: true },
+  },
+  {
+    key: "charger",
+    title: "Smart Converter / Charger",
+    category: "charger",
+    fit: "Useful when upgrading chemistry or tightening charging performance.",
+    triggers: { templateKeys: ["rv_power", "rv_maintenance"], focus: ["off-grid", "starter"] },
+  },
+];
+
+function getRvCampingProfileByKey(key) {
+  return RV_CAMPING_PROFILES.find((item) => item.key === key) || RV_CAMPING_PROFILES[0];
+}
+
+function estimateRvIntelligence({ appliances = [], batteryVoltage = 12, autonomyDays = 1, sunHours = 4, systemLoss = 0.2, templateKey = "rv_power", campingProfileKey = "weekend" }) {
+  const profile = getRvCampingProfileByKey(campingProfileKey);
+  const dailyWh = appliances.reduce((sum, item) => sum + (Number(item?.watts || 0) * Number(item?.hours || 0)), 0);
+  const adjustedDailyWh = dailyWh * (1 + Number(systemLoss || 0)) * profile.demandMultiplier;
+  const batteryAh = Number((((adjustedDailyWh * Math.max(Number(autonomyDays || 1), 1)) / Math.max(Number(batteryVoltage || 12), 1))).toFixed(1));
+  const solarWatts = Number(((adjustedDailyWh / Math.max(Number(sunHours || 4), 1)) * profile.solarMultiplier).toFixed(1));
+  const peakWatts = appliances.reduce((maxValue, item) => Math.max(maxValue, Number(item?.watts || 0)), 0);
+  const inverterWatts = Math.max(1000, Math.ceil((peakWatts * 1.35) / 250) * 250);
+  const batteryTier = batteryAh >= 280 ? "Heavy off-grid" : batteryAh >= 170 ? "Strong weekend/boondock" : batteryAh >= 100 ? "Solid starter" : "Light starter";
+  const solarTier = solarWatts >= 550 ? "Roof-ready array" : solarWatts >= 300 ? "Mid-size solar" : "Starter solar";
+  const estimatedCostLow = Math.round((batteryAh * 2.1) + (solarWatts * 1.05) + (inverterWatts * 0.18));
+  const estimatedCostHigh = Math.round((batteryAh * 3.5) + (solarWatts * 1.9) + (inverterWatts * 0.32));
+  const batteryRecommendation = batteryAh >= 180 ? "LiFePO4 battery bank recommended" : "AGM can work, but LiFePO4 still gives the best long-term RV value";
+  const solarRecommendation = solarWatts >= 360 ? "Plan for a larger array plus MPPT charging" : "A starter kit can cover this setup if roof space is available";
+  const urgency = templateKey === "rv_diagnostics" ? "Use diagnostics + saved scans to tie recommendations to real coach issues." : "Use this as a sizing guide before selecting gear.";
+  return {
+    profile,
+    dailyWh: Number(dailyWh.toFixed(1)),
+    adjustedDailyWh: Number(adjustedDailyWh.toFixed(1)),
+    batteryAh,
+    solarWatts,
+    inverterWatts,
+    batteryTier,
+    solarTier,
+    batteryRecommendation,
+    solarRecommendation,
+    estimatedCostLow,
+    estimatedCostHigh,
+    urgency,
+  };
+}
+
+function getRvAffiliateRecommendations(intel, templateKey = "rv_power") {
+  if (!intel) return [];
+  return RV_AFFILIATE_ENGINE.filter((item) => {
+    const t = item.triggers || {};
+    if (t.templateKeys && !t.templateKeys.includes(templateKey)) return false;
+    if (t.focus && !t.focus.includes(intel.profile?.affiliateFocus)) return false;
+    if (typeof t.minBatteryAh === "number" && intel.batteryAh < t.minBatteryAh) return false;
+    if (typeof t.maxBatteryAh === "number" && intel.batteryAh > t.maxBatteryAh) return false;
+    if (typeof t.minSolarWatts === "number" && intel.solarWatts < t.minSolarWatts) return false;
+    if (typeof t.maxSolarWatts === "number" && intel.solarWatts > t.maxSolarWatts) return false;
+    if (typeof t.minInverterWatts === "number" && intel.inverterWatts < t.minInverterWatts) return false;
+    if (typeof t.maxInverterWatts === "number" && intel.inverterWatts > t.maxInverterWatts) return false;
+    if (t.always) return true;
+    return true;
+  }).slice(0, 5).map((item, index) => ({
+    ...item,
+    slug: `rv-${item.key}`,
+    cta: index === 0 ? "Featured RV fit" : "Suggested add-on",
+  }));
+}
+
 const SIMPLE_STYLE_OPTIONS = ["Dark glass", "Clean SaaS", "Builder Pro", "Minimal"];
 const SIMPLE_GENERATION_STAGES = [
   "Understanding what you want to build",
@@ -1627,6 +1833,8 @@ export default function App() {
     const stored = loadFromStorage(STORAGE_KEYS.simpleDraft, DEFAULT_SIMPLE_DRAFT);
     return { ...DEFAULT_SIMPLE_DRAFT, ...stored };
   });
+  const [selectedRvTemplateKey, setSelectedRvTemplateKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvTemplate, RV_SMART_TEMPLATES[0].key));
+  const [rvCampingProfileKey, setRvCampingProfileKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvCampingProfile, RV_CAMPING_PROFILES[0].key));
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
   const [generatedFileTree, setGeneratedFileTree] = useState([]);
@@ -1637,6 +1845,11 @@ export default function App() {
   const [generatedCodeFiles, setGeneratedCodeFiles] = useState([]);
   const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState("");
   const [livePreviewDoc, setLivePreviewDoc] = useState("");
+  const [runtimeSandboxSessionId, setRuntimeSandboxSessionId] = useState(() => loadFromStorage(STORAGE_KEYS.runtimeSandboxSession, ""));
+  const [runtimeSandboxUrl, setRuntimeSandboxUrl] = useState(() => loadFromStorage(STORAGE_KEYS.runtimeSandboxUrl, ""));
+  const [runtimeSandboxStatus, setRuntimeSandboxStatus] = useState("idle");
+  const [runtimeSandboxError, setRuntimeSandboxError] = useState("");
+  const [isRunningRuntimeSandbox, setIsRunningRuntimeSandbox] = useState(false);
   const [selectedPreviewRoute, setSelectedPreviewRoute] = useState("/");
   const [previewAuthMode, setPreviewAuthMode] = useState("guest");
   const [mutationLoopInput, setMutationLoopInput] = useState("");
@@ -1678,10 +1891,14 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleDraft, simpleDraft), [simpleDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.mutationVersions, mutationVersions), [mutationVersions]);
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.rvTemplate, selectedRvTemplateKey), [selectedRvTemplateKey]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.rvCampingProfile, rvCampingProfileKey), [rvCampingProfileKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxSession, runtimeSandboxSessionId), [runtimeSandboxSessionId]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxUrl, runtimeSandboxUrl), [runtimeSandboxUrl]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1743,6 +1960,30 @@ export default function App() {
     () => getSimpleStarterByKey(simpleDraft.starterKey),
     [simpleDraft.starterKey],
   );
+  const selectedRvTemplate = useMemo(
+    () => getRvTemplateByKey(selectedRvTemplateKey),
+    [selectedRvTemplateKey],
+  );
+  const rvCampingProfile = useMemo(
+    () => getRvCampingProfileByKey(rvCampingProfileKey),
+    [rvCampingProfileKey],
+  );
+  const rvIntelligence = useMemo(
+    () => estimateRvIntelligence({
+      appliances,
+      batteryVoltage,
+      autonomyDays,
+      sunHours,
+      systemLoss,
+      templateKey: selectedRvTemplateKey,
+      campingProfileKey: rvCampingProfileKey,
+    }),
+    [appliances, batteryVoltage, autonomyDays, sunHours, systemLoss, selectedRvTemplateKey, rvCampingProfileKey],
+  );
+  const rvAffiliateRecommendations = useMemo(
+    () => getRvAffiliateRecommendations(rvIntelligence, selectedRvTemplateKey),
+    [rvIntelligence, selectedRvTemplateKey],
+  );
   const nextBestActions = useMemo(
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
@@ -1791,11 +2032,12 @@ export default function App() {
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
+    selectedRvTemplate.prompt,
     "Add dark mode and sidebar",
     "Add login and saved data",
     "Make it mobile friendly",
     "Export this app for Render",
-  ], [projectId]);
+  ], [projectId, selectedRvTemplate]);
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -2137,6 +2379,48 @@ export default function App() {
     setChatScrollTick((prev) => prev + 1);
   }
 
+  function applyRvSmartTemplate(templateKey, submitNow = false) {
+    const template = getRvTemplateByKey(templateKey);
+    setSelectedRvTemplateKey(template.key);
+    setSimpleDraft({
+      starterKey: template.starterKey,
+      appName: template.label,
+      mainGoal: template.goal,
+      style: template.style,
+    });
+    setPrompt(template.prompt);
+    setBuilderChatDraft(template.prompt);
+    setUiMode("chat");
+    setSimpleFlowStep("builder");
+    setFeatureState((prev) => ({
+      ...prev,
+      quickIdea: template.prompt,
+      notes: prev.notes || `RV smart template selected: ${template.label}`,
+      themeTone: template.style,
+    }));
+    setSystemPlanner((previous) => inferSystemPlanner({
+      prompt: template.prompt,
+      appType: inferAppType(template.prompt),
+      builderMode: inferBuilderMode(template.prompt),
+      routes: generatedRoutes,
+      components: generatedComponents,
+      featureState: {
+        ...featureState,
+        quickIdea: template.prompt,
+      },
+      previousPlanner: {
+        ...(previous || {}),
+        systems: [...new Set([...(previous?.systems || []), ...(template.systems || [])])],
+        complexity: previous?.complexity || "product",
+      },
+    }));
+    setStatusMessage(`RV smart template ready: ${template.label}.`);
+    setBuilderInsight(`${template.label} template loaded with ${template.systems.length} connected systems.`);
+    if (submitNow) {
+      submitBuilderChatMessage(template.prompt, "evolve");
+    }
+  }
+
   async function submitBuilderChatMessage(rawMessage, modeOverride) {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
@@ -2317,6 +2601,107 @@ export default function App() {
 
     return { ...data, ...applied };
   }
+
+  function normalizeRuntimePreviewUrl(url) {
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url)) return url;
+    return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+  }
+
+  async function runRuntimeSandbox(options = {}) {
+    if (!generatedCodeFiles.length) {
+      setRuntimeSandboxError("Generate the app first before starting the runtime sandbox.");
+      setRuntimeSandboxStatus("empty");
+      return null;
+    }
+
+    try {
+      setIsRunningRuntimeSandbox(true);
+      setRuntimeSandboxError("");
+      setRuntimeSandboxStatus("starting");
+      setStatusMessage("Starting runtime sandbox...");
+
+      const response = await fetch(`${API_BASE}/preview/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: options.sessionId || runtimeSandboxSessionId || undefined,
+          project_id: projectId || undefined,
+          prompt: options.prompt || prompt || featureState.quickIdea,
+          app_type: featureState.appType,
+          builder_mode: featureState.builderMode,
+          route: options.route || selectedPreviewRoute || activePreviewRoute?.path || "/",
+          auth_mode: options.authMode || previewAuthMode || "guest",
+          files: generatedCodeFiles,
+          routes: generatedRoutes,
+          components: generatedComponents,
+          systems: systemPlanner?.systems || [],
+        }),
+      });
+
+      if (!response.ok) throw new Error("Runtime sandbox request failed");
+      const data = await response.json();
+      const nextUrl = normalizeRuntimePreviewUrl(data.preview_url || "");
+
+      setRuntimeSandboxSessionId(data.session_id || "");
+      setRuntimeSandboxUrl(nextUrl);
+      setRuntimeSandboxStatus(data.status || "ready");
+      setStatusMessage(`Runtime sandbox ready${data.session_id ? ` · ${data.session_id}` : ""}`);
+      appendMutationLog({
+        type: "runtime-sandbox",
+        command: options.prompt || prompt || featureState.quickIdea,
+        details: `Sandbox ${data.session_id || "session"} ready on ${data.route || selectedPreviewRoute || "/"}.`,
+      });
+      return data;
+    } catch (error) {
+      setRuntimeSandboxError(error.message || "Runtime sandbox failed");
+      setRuntimeSandboxStatus("error");
+      setStatusMessage(`Runtime sandbox failed: ${error.message}`);
+      return null;
+    } finally {
+      setIsRunningRuntimeSandbox(false);
+    }
+  }
+
+  async function refreshRuntimeSandboxStatus() {
+    if (!runtimeSandboxSessionId) return null;
+    try {
+      const response = await fetch(`${API_BASE}/preview/status/${runtimeSandboxSessionId}`);
+      if (!response.ok) throw new Error("Sandbox status request failed");
+      const data = await response.json();
+      setRuntimeSandboxStatus(data.status || "ready");
+      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
+      return data;
+    } catch (error) {
+      setRuntimeSandboxError(error.message || "Sandbox status failed");
+      return null;
+    }
+  }
+
+  async function resetRuntimeSandbox() {
+    if (!runtimeSandboxSessionId) {
+      setRuntimeSandboxUrl("");
+      setRuntimeSandboxStatus("idle");
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/preview/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: runtimeSandboxSessionId }),
+      });
+      if (!response.ok) throw new Error("Sandbox reset failed");
+      setRuntimeSandboxSessionId("");
+      setRuntimeSandboxUrl("");
+      setRuntimeSandboxStatus("idle");
+      setRuntimeSandboxError("");
+      setStatusMessage("Runtime sandbox reset.");
+    } catch (error) {
+      setRuntimeSandboxError(error.message || "Sandbox reset failed");
+      setStatusMessage(`Runtime sandbox reset failed: ${error.message}`);
+    }
+  }
+
 
   function buildMutationLoopPrompt(instruction) {
     const basePrompt = prompt || featureState.quickIdea || `${featureState.appType} ${featureState.builderMode}`;
@@ -3598,6 +3983,94 @@ async function downloadDeploymentBundle(target) {
                 </div>
               </div>
 
+              <Panel title="RV Smart Templates" subtitle="Use your niche advantage. Start from polished RV product patterns instead of generic app ideas." compact>
+                <div className="simple-starter-grid">
+                  {RV_SMART_TEMPLATES.map((template) => (
+                    <button
+                      key={template.key}
+                      className={`simple-starter-card ${selectedRvTemplateKey === template.key ? "active" : ""}`}
+                      onClick={() => applyRvSmartTemplate(template.key)}
+                      type="button"
+                    >
+                      <div className="module-top">
+                        <strong>{template.label}</strong>
+                        <span className="tag">{template.badge}</span>
+                      </div>
+                      <div className="muted">{template.description}</div>
+                      <div className="zone-chip-row">
+                        {(template.systems || []).slice(0, 3).map((systemKey) => (
+                          <span key={systemKey} className="zone-chip">{formatSystemLabel(systemKey)}</span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="chat-chip-row" style={{ marginTop: 12 }}>
+                  <button className="pill primary" type="button" onClick={() => applyRvSmartTemplate(selectedRvTemplateKey, true)}>
+                    Build selected RV template
+                  </button>
+                  <span className="muted">Selected: {selectedRvTemplate.label}</span>
+                </div>
+
+              <Panel title="RV Intelligence + Affiliate Engine" subtitle="Turn RV ideas into real sizing guidance and monetizable product recommendations." compact>
+                <div className="simple-builder-grid">
+                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                    <div className="module-top">
+                      <strong>{selectedRvTemplate.label}</strong>
+                      <span className="tag">{rvCampingProfile.label}</span>
+                    </div>
+                    <div className="muted">{rvCampingProfile.note}</div>
+                    <label className="simple-field">
+                      <span>Camping profile</span>
+                      <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
+                        {RV_CAMPING_PROFILES.map((profile) => (
+                          <option key={profile.key} value={profile.key}>{profile.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="card-grid">
+                      <div className="card">
+                        <span className="muted">Battery target</span>
+                        <strong>{rvIntelligence.batteryAh}Ah</strong>
+                      </div>
+                      <div className="card">
+                        <span className="muted">Solar target</span>
+                        <strong>{rvIntelligence.solarWatts}W</strong>
+                      </div>
+                      <div className="card">
+                        <span className="muted">Inverter guide</span>
+                        <strong>{rvIntelligence.inverterWatts}W</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                    <div className="module-top">
+                      <strong>Affiliate-ready suggestions</strong>
+                      <span className="tag">{rvAffiliateRecommendations.length} picks</span>
+                    </div>
+                    <div className="muted">{rvIntelligence.batteryRecommendation}. {rvIntelligence.solarRecommendation}</div>
+                    <div className="module-list">
+                      {rvAffiliateRecommendations.map((item) => (
+                        <div key={item.key} className="module-item">
+                          <div className="module-top">
+                            <strong>{item.title}</strong>
+                            <span className="tag">{item.cta}</span>
+                          </div>
+                          <div className="muted">{item.fit}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="zone-chip-row">
+                      <span className="zone-chip">Cost guide · ${rvIntelligence.estimatedCostLow}–${rvIntelligence.estimatedCostHigh}</span>
+                      <span className="zone-chip">{rvIntelligence.batteryTier}</span>
+                      <span className="zone-chip">{rvIntelligence.solarTier}</span>
+                    </div>
+                  </div>
+                </div>
+              </Panel>
+
+              </Panel>
+
               <div className="simple-starter-grid">
                 {SIMPLE_STARTERS.map((starter) => (
                   <button
@@ -4027,12 +4500,28 @@ async function downloadDeploymentBundle(target) {
                   <div className="result-box" style={{ marginTop: 12 }}>
                     <div className="module-top">
                       <strong>Live preview runner</strong>
-                      <button
-                        className="mini-btn"
-                        onClick={() => runGenerateCodeBundle(prompt, featureState.appType, featureState.builderMode, generatedRoutes, generatedComponents)}
-                      >
-                        Refresh preview
-                      </button>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <button
+                          className="mini-btn"
+                          onClick={() => runGenerateCodeBundle(prompt, featureState.appType, featureState.builderMode, generatedRoutes, generatedComponents)}
+                        >
+                          Refresh preview
+                        </button>
+                        <button
+                          className="mini-btn"
+                          onClick={() => runRuntimeSandbox()}
+                          disabled={!generatedCodeFiles.length || isRunningRuntimeSandbox}
+                        >
+                          {isRunningRuntimeSandbox ? "Starting sandbox..." : runtimeSandboxUrl ? "Reload sandbox" : "Run sandbox"}
+                        </button>
+                        <button
+                          className="mini-btn"
+                          onClick={() => resetRuntimeSandbox()}
+                          disabled={!runtimeSandboxSessionId}
+                        >
+                          Reset sandbox
+                        </button>
+                      </div>
                     </div>
                     {generatedCodeFiles.length ? (
                       <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
@@ -4073,8 +4562,20 @@ async function downloadDeploymentBundle(target) {
                           ) : null}
                         </div>
                       </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span className="tag">Sandbox: {runtimeSandboxStatus}</span>
+                        {runtimeSandboxSessionId ? <span className="tag">Session {runtimeSandboxSessionId.slice(0, 8)}</span> : null}
+                        {runtimeSandboxError ? <span className="tag" style={{ color: "#fecaca" }}>{runtimeSandboxError}</span> : null}
+                      </div>
                     ) : null}
-                    {livePreviewDoc ? (
+                    {runtimeSandboxUrl ? (
+                      <iframe
+                        title="Generated app runtime sandbox"
+                        className="live-preview-frame"
+                        src={runtimeSandboxUrl}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
+                    ) : livePreviewDoc ? (
                       <iframe
                         title="Generated app live preview"
                         className="live-preview-frame"
@@ -4083,7 +4584,7 @@ async function downloadDeploymentBundle(target) {
                       />
                     ) : (
                       <div className="muted" style={{ marginTop: 12 }}>
-                        Generate code to render a live preview shell here.
+                        Generate code to render a live preview shell here. Phase 1 sandbox runs a lightweight backend-managed preview session.
                       </div>
                     )}
 
@@ -4672,7 +5173,7 @@ async function downloadDeploymentBundle(target) {
       </div>
 
       <div className="footer-note">
-        Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, and the new system planner are preserved. New step: the builder now plans connected product systems before code generation.
+        Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, system planner, and the new RV smart template system are preserved. New step: the builder now plans connected RV product systems before code generation.
       </div>
       </>
       ) : uiMode === "chat" ? (
@@ -4698,6 +5199,53 @@ async function downloadDeploymentBundle(target) {
                   {builderChatQuickIdeas.map((idea) => (
                     <button key={idea} className="chat-chip" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
                   ))}
+                </div>
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  <div className="module-item">
+                    <div className="module-top">
+                      <strong>RV Smart Templates</strong>
+                      <span className="tag">Niche mode</span>
+                    </div>
+                    <div className="chat-chip-row">
+                      {RV_SMART_TEMPLATES.map((template) => (
+                        <button
+                          key={template.key}
+                          className={`chat-chip ${selectedRvTemplateKey === template.key ? "active" : ""}`}
+                          type="button"
+                          onClick={() => applyRvSmartTemplate(template.key)}
+                        >
+                          {template.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="muted" style={{ marginTop: 10 }}>
+                      {selectedRvTemplate.description}
+                    </div>
+                    <div className="zone-chip-row" style={{ marginTop: 10 }}>
+                      <span className="zone-chip">{rvCampingProfile.label}</span>
+                      <span className="zone-chip">{rvIntelligence.batteryAh}Ah</span>
+                      <span className="zone-chip">{rvIntelligence.solarWatts}W</span>
+                    </div>
+                    <label className="simple-field" style={{ marginTop: 10 }}>
+                      <span>Camping profile</span>
+                      <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
+                        {RV_CAMPING_PROFILES.map((profile) => (
+                          <option key={profile.key} value={profile.key}>{profile.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {rvAffiliateRecommendations.slice(0, 3).map((item) => (
+                        <div key={item.key} className="module-item">
+                          <div className="module-top">
+                            <strong>{item.title}</strong>
+                            <span className="tag">{item.cta}</span>
+                          </div>
+                          <div className="muted">{item.fit}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="chat-chip-row">
                   <button className="pill primary" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
