@@ -14,6 +14,8 @@ const STORAGE_KEYS = {
   uiMode: "builder_ui_mode_v1",
   simpleFlowStep: "builder_simple_flow_step_v1",
   simpleDraft: "builder_simple_draft_v1",
+  mutationVersions: "builder_mutation_versions_v1",
+  systemPlanner: "builder_system_planner_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -181,12 +183,79 @@ const SIMPLE_GENERATION_STAGES = [
   "Planning the workspace shell",
   "Generating the first builder version",
 ];
+const MUTATION_LOOP_SUGGESTIONS = ["Add dark mode", "Add auth", "Make it mobile friendly", "Add sidebar navigation"];
 const DEFAULT_SIMPLE_DRAFT = {
   starterKey: "assistant",
   appName: "My Assistant",
   mainGoal: "Answer questions, call tools, and guide the user",
   style: "Dark glass",
 };
+
+const SYSTEM_LIBRARY = {
+  auth: {
+    label: "Auth System",
+    description: "Users, login state, protected routes, and role handling.",
+    tags: ["login", "sign in", "account", "profile", "portal", "private"],
+  },
+  dashboard: {
+    label: "Dashboard System",
+    description: "Main overview, stats, recent activity, and navigation hub.",
+    tags: ["dashboard", "analytics", "overview", "metrics", "admin"],
+  },
+  storage: {
+    label: "Storage System",
+    description: "Saved data, history, persistence, and sync strategy.",
+    tags: ["save", "history", "database", "storage", "sync", "records"],
+  },
+  settings: {
+    label: "Settings System",
+    description: "Profile, preferences, environment values, and app configuration.",
+    tags: ["settings", "preferences", "config", "profile"],
+  },
+  billing: {
+    label: "Billing System",
+    description: "Paywalls, subscriptions, plans, and checkout flows.",
+    tags: ["billing", "stripe", "subscription", "paywall", "plan", "pro"],
+  },
+  ai_tools: {
+    label: "AI Tools System",
+    description: "Prompts, model actions, scan flows, chat, and AI endpoints.",
+    tags: ["ai", "assistant", "scan", "chat", "diagnostic", "openai"],
+  },
+  admin: {
+    label: "Admin / Portal System",
+    description: "Back office workflows, operator views, and team roles.",
+    tags: ["admin", "portal", "dealer", "technician", "staff"],
+  },
+  tools: {
+    label: "Tool Engine",
+    description: "Calculators, workflows, utility pages, and structured outputs.",
+    tags: ["tool", "calculator", "utility", "planner", "estimator"],
+  },
+  content: {
+    label: "Content System",
+    description: "Articles, guides, editors, and document-style content flows.",
+    tags: ["content", "editor", "blog", "article", "knowledge"],
+  },
+};
+
+const SYSTEM_COMPLEXITY_OPTIONS = [
+  {
+    key: "starter",
+    label: "Starter",
+    description: "Fast scaffold with the minimum connected systems.",
+  },
+  {
+    key: "mvp",
+    label: "MVP",
+    description: "Balanced product package with persistence and polished flows.",
+  },
+  {
+    key: "product",
+    label: "Product",
+    description: "Deeper app architecture closer to a real shipped product.",
+  },
+];
 
 const APPLIANCE_PRESETS = [
   { name: "RV Fridge", watts: 180, hours: 8 },
@@ -1025,6 +1094,93 @@ function Panel({ title, subtitle, actions, children, compact = false }) {
   );
 }
 
+function inferSystemPlanner({ prompt, appType, builderMode, routes = [], components = [], featureState, previousPlanner }) {
+  const lower = `${prompt || ""} ${(appType || "")} ${(builderMode || "")} ${routes.map((route) => route.path || "").join(" ")} ${components.map((component) => `${component.name || ""} ${component.purpose || ""}`).join(" ")} ${(featureState?.quickIdea || "")}`.toLowerCase();
+
+  const detected = Object.entries(SYSTEM_LIBRARY)
+    .filter(([, value]) => value.tags.some((tag) => lower.includes(tag)))
+    .map(([key]) => key);
+
+  if (appType === "assistant app") detected.push("ai_tools", "dashboard");
+  if (appType === "admin panel") detected.push("dashboard", "admin", "auth");
+  if (appType === "content app") detected.push("content", "dashboard", "storage");
+  if (appType === "tool app") detected.push("tools", "dashboard");
+  if (builderMode?.includes("planner")) detected.push("tools", "storage");
+
+  if (routes.length > 2 || components.length > 4) detected.push("storage");
+  if (routes.some((route) => /settings|profile/i.test(route.path || ""))) detected.push("settings", "auth");
+  if (routes.some((route) => /admin|portal|dealer|tech/i.test(route.path || ""))) detected.push("admin", "auth");
+  if (routes.some((route) => /billing|plans|pricing/i.test(route.path || ""))) detected.push("billing");
+
+  const systems = [...new Set([...(previousPlanner?.systems || []), ...detected])];
+  const finalSystems = systems.length ? systems : ["dashboard", "tools", "storage"];
+
+  const frontend = appType === "content app" ? "React + Vite content shell" : "React + Vite app shell";
+  const backend = (finalSystems.includes("ai_tools") || finalSystems.includes("billing") || finalSystems.includes("auth"))
+    ? "FastAPI or Node API with dedicated service endpoints"
+    : "Light API layer for actions and persistence";
+  const auth = finalSystems.includes("auth") ? "Protected routes + session tokens" : "Public app with optional guest mode";
+  const data = finalSystems.includes("storage") ? "Local persistence first, ready to upgrade to DB/API" : "Ephemeral runtime state";
+
+  const bundles = finalSystems.map((system) => {
+    switch (system) {
+      case "auth":
+        return "Auth bundle → login view, route guards, account state";
+      case "dashboard":
+        return "Dashboard bundle → home summary, stats, recent activity";
+      case "storage":
+        return "Storage bundle → saved items, history, local/API persistence";
+      case "settings":
+        return "Settings bundle → preferences, profile, environment values";
+      case "billing":
+        return "Billing bundle → plan cards, paywall, subscription actions";
+      case "ai_tools":
+        return "AI tools bundle → prompts, chat/scan flow, AI endpoint wiring";
+      case "admin":
+        return "Admin bundle → operator pages, roles, team workflows";
+      case "tools":
+        return "Tools bundle → calculators, workflows, result pages";
+      case "content":
+        return "Content bundle → editor, article detail, document flows";
+      default:
+        return `${system} bundle`;
+    }
+  });
+
+  const complexity = previousPlanner?.complexity || (finalSystems.length >= 5 ? "product" : finalSystems.length >= 3 ? "mvp" : "starter");
+
+  return {
+    systems: finalSystems,
+    architecture: {
+      frontend,
+      backend,
+      auth,
+      data,
+    },
+    bundles,
+    complexity,
+    summary: `${finalSystems.length} systems planned for a ${appType || "custom"} using ${builderMode || "builder mode"}.`,
+  };
+}
+
+function buildSystemPlannerPromptBlock(planner) {
+  if (!planner) return "";
+  return `
+
+SYSTEM PLANNER
+- Complexity: ${planner.complexity}
+- Systems: ${(planner.systems || []).join(", ")}
+- Frontend: ${planner.architecture?.frontend || ""}
+- Backend: ${planner.architecture?.backend || ""}
+- Auth: ${planner.architecture?.auth || ""}
+- Data: ${planner.architecture?.data || ""}
+- Feature bundles: ${(planner.bundles || []).join(" | ")}`;
+}
+
+function formatSystemLabel(key) {
+  return SYSTEM_LIBRARY[key]?.label || key;
+}
+
 function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) {
   const previewTitle =
     layout.mode === "dashboard"
@@ -1184,6 +1340,22 @@ export default function App() {
   const [generatedCodeFiles, setGeneratedCodeFiles] = useState([]);
   const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState("");
   const [livePreviewDoc, setLivePreviewDoc] = useState("");
+  const [mutationLoopInput, setMutationLoopInput] = useState("");
+  const [isMutatingGeneratedApp, setIsMutatingGeneratedApp] = useState(false);
+  const [mutationVersions, setMutationVersions] = useState(() => loadFromStorage(STORAGE_KEYS.mutationVersions, []));
+  const [systemPlanner, setSystemPlanner] = useState(() =>
+    loadFromStorage(
+      STORAGE_KEYS.systemPlanner,
+      inferSystemPlanner({
+        prompt: loadFromStorage(STORAGE_KEYS.prompt, ""),
+        appType: DEFAULT_FEATURE_STATE.appType,
+        builderMode: DEFAULT_FEATURE_STATE.builderMode,
+        routes: [],
+        components: [],
+        featureState: DEFAULT_FEATURE_STATE,
+      }),
+    ),
+  );
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
@@ -1197,6 +1369,8 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.uiMode, uiMode), [uiMode]);
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleFlowStep, simpleFlowStep), [simpleFlowStep]);
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleDraft, simpleDraft), [simpleDraft]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.mutationVersions, mutationVersions), [mutationVersions]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1230,6 +1404,18 @@ export default function App() {
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [simpleFlowStep, simplePendingPrompt]);
 
+  useEffect(() => {
+    setSystemPlanner((previous) => inferSystemPlanner({
+      prompt,
+      appType: featureState.appType,
+      builderMode: featureState.builderMode,
+      routes: generatedRoutes,
+      components: generatedComponents,
+      featureState,
+      previousPlanner: previous,
+    }));
+  }, [prompt, featureState.appType, featureState.builderMode, featureState.quickIdea, generatedRoutes, generatedComponents]);
+
   const analysis = useMemo(() => analyzePrompt(prompt), [prompt]);
   const computedSummary = useMemo(
     () => computeSummary(result, featureState.summaryStyle),
@@ -1254,6 +1440,7 @@ export default function App() {
     () => generatedCodeFiles.find((file) => file.path === selectedGeneratedFilePath) || generatedCodeFiles[0] || null,
     [generatedCodeFiles, selectedGeneratedFilePath],
   );
+  const latestMutationVersion = useMemo(() => mutationVersions[0] || null, [mutationVersions]);
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -1470,6 +1657,59 @@ export default function App() {
     ]);
   }
 
+  function buildMutationLoopPrompt(instruction) {
+    const basePrompt = prompt || featureState.quickIdea || `${featureState.appType} ${featureState.builderMode}`;
+    return [
+      `Base app: ${basePrompt}`,
+      `Current app type: ${featureState.appType}`,
+      `Current builder mode: ${featureState.builderMode}`,
+      `Mutation request: ${instruction}`,
+    ].join("\n");
+  }
+
+  function saveMutationVersionSnapshot(label) {
+    if (!generatedCodeFiles.length) return;
+    const snapshot = {
+      id: uid("ver"),
+      label,
+      time: nowLabel(),
+      files: generatedCodeFiles.map((file) => ({ ...file })),
+      routes: generatedRoutes.map((route) => ({ ...route })),
+      components: generatedComponents.map((component) => ({ ...component })),
+      fileTree: generatedFileTree.map((item) => ({ ...item })),
+      livePreviewDoc,
+      selectedPath: selectedGeneratedFilePath || generatedCodeFiles[0]?.path || "",
+      prompt,
+      appType: featureState.appType,
+      builderMode: featureState.builderMode,
+    };
+
+    setMutationVersions((prev) => [snapshot, ...prev].slice(0, 12));
+  }
+
+  function restoreMutationVersion(snapshot) {
+    if (!snapshot) return;
+    setGeneratedCodeFiles(snapshot.files || []);
+    setGeneratedRoutes(snapshot.routes || []);
+    setGeneratedComponents(snapshot.components || []);
+    setGeneratedFileTree(snapshot.fileTree || []);
+    setSelectedGeneratedFilePath(snapshot.selectedPath || snapshot.files?.[0]?.path || "");
+    setPrompt(snapshot.prompt || prompt);
+    setFeatureState((prev) => ({
+      ...prev,
+      appType: snapshot.appType || prev.appType,
+      builderMode: snapshot.builderMode || prev.builderMode,
+      quickIdea: snapshot.prompt || prev.quickIdea,
+    }));
+    setLivePreviewDoc(snapshot.livePreviewDoc || "");
+    appendMutationLog({
+      type: "restore-version",
+      command: snapshot.label || "restore version",
+      details: `Restored ${snapshot.label || "saved version"} from ${snapshot.time}.`,
+    });
+    setStatusMessage(`Restored ${snapshot.label || "saved version"}.`);
+  }
+
   function ensureModules(modulesToAdd) {
     if (!modulesToAdd?.length) return;
     setActiveModules((prev) => [...new Set([...prev, ...modulesToAdd])]);
@@ -1565,17 +1805,158 @@ export default function App() {
     }
   }
 
+  async function handleGeneratedAppMutation(customInstruction) {
+    const instruction = (customInstruction ?? mutationLoopInput).trim();
+    if (!instruction) {
+      setStatusMessage("Write a mutation request first.");
+      return;
+    }
+
+    if (!generatedCodeFiles.length) {
+      setStatusMessage("Generate the app first before running a mutation loop.");
+      return;
+    }
+
+    const mutationPrompt = buildMutationLoopPrompt(instruction);
+
+    try {
+      setIsMutatingGeneratedApp(true);
+      setStatusMessage("Applying mutation loop...");
+      saveMutationVersionSnapshot(`Before: ${instruction}`);
+
+      const response = await fetch(`${API_BASE}/mutate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: mutationPrompt,
+          instruction,
+          current_layout: layoutState,
+          active_modules: activeModules,
+          feature_state: featureState,
+          system_planner: systemPlanner,
+          current_files: generatedCodeFiles,
+          current_routes: generatedRoutes,
+          current_components: generatedComponents,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Mutation loop request failed");
+      const data = await response.json();
+
+      const nextLayout = data.layout_changes || applyLayoutCommand(instruction, layoutState, activeModules).layout;
+      const nextRoutes = Array.isArray(data.routes) ? data.routes : generatedRoutes;
+      const nextComponents = Array.isArray(data.components) ? data.components : generatedComponents;
+      const nextFileTree = Array.isArray(data.file_tree) ? data.file_tree : generatedFileTree;
+      const nextModules = data.module_changes?.enable?.length
+        ? [...new Set([...activeModules, ...data.module_changes.enable])]
+        : activeModules;
+
+      setLayoutState(nextLayout);
+      setActiveModules(nextModules);
+      setGeneratedFileTree(nextFileTree);
+      setGeneratedRoutes(nextRoutes);
+      setGeneratedComponents(nextComponents);
+      setBackendNextActions(Array.isArray(data.next_best_actions) ? data.next_best_actions : backendNextActions);
+      setBackendMutationSummary(Array.isArray(data.mutation_summary) ? data.mutation_summary : []);
+
+      const combinedPrompt = `${prompt || featureState.quickIdea} → ${instruction}`;
+      setPrompt(combinedPrompt);
+      setFeatureState((prev) => ({
+        ...prev,
+        appType: data.app_type || prev.appType,
+        builderMode: data.builder_mode || prev.builderMode,
+        quickIdea: combinedPrompt,
+      }));
+
+      await runGenerateCodeBundle(
+        combinedPrompt,
+        data.app_type || featureState.appType,
+        data.builder_mode || featureState.builderMode,
+        nextRoutes,
+        nextComponents,
+      );
+
+      appendMutationLog({
+        type: "mutation-loop",
+        command: instruction,
+        details: data.mutation_summary?.length
+          ? data.mutation_summary.join(" • ")
+          : `Applied mutation loop update for ${instruction}.`,
+      });
+
+      setCommandHistory((prev) => [
+        {
+          id: uid("cmd"),
+          prompt: combinedPrompt,
+          time: nowLabel(),
+          appType: data.app_type || featureState.appType,
+          builderMode: data.builder_mode || featureState.builderMode,
+        },
+        ...prev,
+      ]);
+
+      setBuilderInsight(
+        data.mutation_summary?.length
+          ? data.mutation_summary.join(" • ")
+          : `Builder improved the generated app with: ${instruction}.`
+      );
+      setMutationLoopInput("");
+      setStatusMessage(`Mutation loop applied: ${instruction}`);
+    } catch (error) {
+      setStatusMessage(`Mutation loop failed: ${error.message}`);
+    } finally {
+      setIsMutatingGeneratedApp(false);
+    }
+  }
+
+  function togglePlannedSystem(systemKey) {
+    setSystemPlanner((previous) => {
+      const exists = previous.systems.includes(systemKey);
+      const systems = exists
+        ? previous.systems.filter((item) => item !== systemKey)
+        : [...previous.systems, systemKey];
+      return inferSystemPlanner({
+        prompt,
+        appType: featureState.appType,
+        builderMode: featureState.builderMode,
+        routes: generatedRoutes,
+        components: generatedComponents,
+        featureState,
+        previousPlanner: { ...previous, systems },
+      });
+    });
+  }
+
+  function setPlannerComplexity(complexity) {
+    setSystemPlanner((previous) => ({ ...previous, complexity }));
+  }
+
+  function refreshSystemPlanner() {
+    setSystemPlanner((previous) => inferSystemPlanner({
+      prompt,
+      appType: featureState.appType,
+      builderMode: featureState.builderMode,
+      routes: generatedRoutes,
+      components: generatedComponents,
+      featureState,
+      previousPlanner: previous,
+    }));
+    setStatusMessage("System planner refreshed.");
+  }
+
   async function runGenerateCodeBundle(sourcePrompt, appType, builderMode, routes, components) {
     const response = await fetch(`${API_BASE}/generate-code`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: sourcePrompt,
+        prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
         app_type: appType,
         builder_mode: builderMode,
         style: simpleDraft.style || "Dark glass",
         routes,
         components,
+        system_planner: systemPlanner,
+        system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
       }),
     });
 
@@ -1626,10 +2007,11 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: sourcePrompt,
+          prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
           current_layout: layoutState,
           active_modules: activeModules,
           feature_state: featureState,
+          system_planner: systemPlanner,
         }),
       });
 
@@ -1662,7 +2044,7 @@ export default function App() {
       setCommandHistory((prev) => [
         {
           id: uid("cmd"),
-          prompt: sourcePrompt,
+          prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
           time: nowLabel(),
           appType: data.app_type || nextAnalysis.appType,
           builderMode: data.builder_mode || nextAnalysis.builderMode,
@@ -1702,7 +2084,7 @@ export default function App() {
       setCommandHistory((prev) => [
         {
           id: uid("cmd"),
-          prompt: sourcePrompt,
+          prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
           time: nowLabel(),
           appType: nextAnalysis.appType,
           builderMode: nextAnalysis.builderMode,
@@ -2834,6 +3216,72 @@ export default function App() {
                         Generate code to render a live preview shell here.
                       </div>
                     )}
+
+                    <div className="result-box" style={{ marginTop: 14 }}>
+                      <div className="module-top">
+                        <strong>Improve this app</strong>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <span className="tag">Mutation loop</span>
+                          <button
+                            className="mini-btn"
+                            onClick={() => latestMutationVersion && restoreMutationVersion(latestMutationVersion)}
+                            disabled={!latestMutationVersion || isMutatingGeneratedApp}
+                          >
+                            Undo last version
+                          </button>
+                        </div>
+                      </div>
+                      <p className="muted" style={{ marginTop: 8 }}>
+                        Type an improvement request, apply the mutation, then refresh the live preview automatically.
+                      </p>
+                      <textarea
+                        value={mutationLoopInput}
+                        onChange={(event) => setMutationLoopInput(event.target.value)}
+                        placeholder="Add dark mode, add auth, improve mobile layout, add a sidebar..."
+                        rows={3}
+                        style={{ marginTop: 12, width: "100%", resize: "vertical" }}
+                      />
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                        {MUTATION_LOOP_SUGGESTIONS.map((item) => (
+                          <button
+                            key={item}
+                            className="pill"
+                            onClick={() => setMutationLoopInput(item)}
+                            type="button"
+                          >
+                            {item}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="module-top" style={{ marginTop: 12 }}>
+                        <div className="muted">
+                          Saved versions: {mutationVersions.length}
+                          {latestMutationVersion ? ` · Last snapshot ${latestMutationVersion.time}` : ""}
+                        </div>
+                        <button
+                          className="primary-btn"
+                          onClick={() => handleGeneratedAppMutation()}
+                          disabled={!generatedCodeFiles.length || isMutatingGeneratedApp}
+                        >
+                          {isMutatingGeneratedApp ? "Applying mutation..." : "Mutate app"}
+                        </button>
+                      </div>
+                      {mutationVersions.length ? (
+                        <div className="module-list" style={{ marginTop: 12 }}>
+                          {mutationVersions.slice(0, 4).map((version) => (
+                            <button
+                              key={version.id}
+                              className="simple-action-chip"
+                              onClick={() => restoreMutationVersion(version)}
+                              type="button"
+                            >
+                              <strong>{version.label || "Saved version"}</strong>
+                              <span>{version.time}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </Panel>
 
@@ -2909,6 +3357,38 @@ export default function App() {
                       </div>
                       <div className="muted">{simpleDraft.appName}</div>
                     </div>
+                  </div>
+                </Panel>
+
+                <Panel title="System Planner" subtitle="Plan connected product systems before code generation." compact>
+                  <div className="module-top">
+                    <strong>{systemPlanner.summary}</strong>
+                    <button className="mini-btn" onClick={refreshSystemPlanner}>Refresh</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    {SYSTEM_COMPLEXITY_OPTIONS.map((option) => (
+                      <button
+                        key={option.key}
+                        className={`pill ${systemPlanner.complexity === option.key ? "active" : ""}`}
+                        onClick={() => setPlannerComplexity(option.key)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    {Object.keys(SYSTEM_LIBRARY).map((systemKey) => (
+                      <button
+                        key={systemKey}
+                        className={`simple-action-chip ${systemPlanner.systems.includes(systemKey) ? "active" : ""}`}
+                        onClick={() => togglePlannedSystem(systemKey)}
+                        type="button"
+                      >
+                        <strong>{formatSystemLabel(systemKey)}</strong>
+                        <span>{systemPlanner.systems.includes(systemKey) ? "planned" : "optional"}</span>
+                      </button>
+                    ))}
                   </div>
                 </Panel>
               </div>
@@ -3131,6 +3611,48 @@ export default function App() {
 
           <div className="stack">
             
+                <Panel title="System Planner" subtitle="The builder now plans connected systems, not only files.">
+                  <div className="module-top">
+                    <strong>{systemPlanner.summary}</strong>
+                    <button className="mini-btn" onClick={refreshSystemPlanner}>Refresh planner</button>
+                  </div>
+                  <div className="brain-grid" style={{ marginTop: 14 }}>
+                    <StatCard label="Complexity" value={systemPlanner.complexity} hint="Generation depth" />
+                    <StatCard label="Systems" value={systemPlanner.systems.length} hint="Connected bundles planned" accent="var(--accent-2)" />
+                    <StatCard label="Data" value={systemPlanner.architecture?.data || "—"} hint="Persistence strategy" accent="var(--success)" />
+                  </div>
+                  <div className="module-list" style={{ marginTop: 14 }}>
+                    {systemPlanner.systems.map((systemKey) => (
+                      <div key={systemKey} className="module-item">
+                        <div className="module-top">
+                          <strong>{formatSystemLabel(systemKey)}</strong>
+                          <span className="tag">planned</span>
+                        </div>
+                        <div className="muted">{SYSTEM_LIBRARY[systemKey]?.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                    {SYSTEM_COMPLEXITY_OPTIONS.map((option) => (
+                      <button
+                        key={option.key}
+                        className={`pill ${systemPlanner.complexity === option.key ? "active" : ""}`}
+                        onClick={() => setPlannerComplexity(option.key)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="result-box" style={{ marginTop: 14 }}>
+                    <strong>Architecture</strong>
+                    <div className="muted" style={{ marginTop: 8 }}>Frontend: {systemPlanner.architecture?.frontend}</div>
+                    <div className="muted">Backend: {systemPlanner.architecture?.backend}</div>
+                    <div className="muted">Auth: {systemPlanner.architecture?.auth}</div>
+                    <div className="muted">Data: {systemPlanner.architecture?.data}</div>
+                  </div>
+                </Panel>
+
                 <Panel
                   title="Builder Structure"
                   subtitle="Files, routes, and components returned by mutation engine v2"
@@ -3279,7 +3801,7 @@ export default function App() {
       </div>
 
       <div className="footer-note">
-        Builder brain, mutation log, export flow, local saves, affiliate block, and backend battery planner are preserved. New step: commands now mutate the actual UI shell.
+        Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, and the new system planner are preserved. New step: the builder now plans connected product systems before code generation.
       </div>
       </>
       ) : null}
