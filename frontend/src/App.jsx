@@ -16,6 +16,8 @@ const STORAGE_KEYS = {
   simpleDraft: "builder_simple_draft_v1",
   mutationVersions: "builder_mutation_versions_v1",
   systemPlanner: "builder_system_planner_v1",
+  projectId: "builder_project_id_v1",
+  orchestrationHistory: "builder_orchestration_history_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -884,6 +886,132 @@ ${installSteps.join("\n")}
 `;
 }
 
+
+
+function buildRenderYaml(structure, folderName) {
+  const serviceName = sanitizeProjectName(folderName || "builder-project");
+  const lines = ["services:"];
+  if (structure.hasBackend) {
+    lines.push("  - type: web");
+    lines.push(`    name: ${serviceName}-backend`);
+    lines.push("    env: python");
+    if (structure.backendRoot) lines.push(`    rootDir: ${structure.backendRoot}`);
+    lines.push("    buildCommand: pip install -r requirements.txt");
+    lines.push("    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT");
+    lines.push("    envVars:");
+    lines.push("      - key: OPENAI_API_KEY");
+    lines.push("        sync: false");
+    if (structure.hasFrontend) {
+      lines.push("      - key: ALLOWED_ORIGINS");
+      lines.push("        value: https://your-frontend-url.onrender.com");
+    }
+  }
+  if (structure.hasFrontend) {
+    lines.push("  - type: static");
+    lines.push(`    name: ${serviceName}-frontend`);
+    if (structure.frontendRoot) lines.push(`    rootDir: ${structure.frontendRoot}`);
+    lines.push("    buildCommand: npm install && npm run build");
+    lines.push("    publishDir: dist");
+    lines.push("    envVars:");
+    lines.push("      - key: VITE_API_URL");
+    lines.push("        value: https://your-backend-url.onrender.com");
+    lines.push("    routes:");
+    lines.push("      - type: rewrite");
+    lines.push("        source: /*");
+    lines.push("        destination: /index.html");
+  }
+  return lines.join("\n");
+}
+
+function buildVercelJson(structure) {
+  const payload = {
+    cleanUrls: true,
+    trailingSlash: false,
+    rewrites: structure.hasFrontend
+      ? [{ source: "/(.*)", destination: "/index.html" }]
+      : [],
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function buildDeployNotes(target, structure, folderName) {
+  const title = target === "render" ? "Render deployment" : "Vercel deployment";
+  const lines = [
+    `# ${title}`,
+    "",
+    `Prepared on ${nowLabel()} for ${folderName}.`,
+    "",
+  ];
+
+  if (target === "render") {
+    lines.push("## What is included");
+    lines.push("- render.yaml");
+    if (structure.hasBackend) lines.push("- Backend service settings for FastAPI");
+    if (structure.hasFrontend) lines.push("- Static site settings for the frontend");
+    lines.push("");
+    lines.push("## How to use");
+    lines.push("1. Extract this bundle.");
+    lines.push("2. Push the files to GitHub.");
+    lines.push("3. In Render, create a Blueprint or new services from the repo.");
+    lines.push("4. Set the environment variables shown in the generated .env.example files.");
+  } else {
+    lines.push("## What is included");
+    lines.push("- vercel.json");
+    if (structure.hasFrontend) lines.push("- SPA rewrite for the frontend");
+    lines.push("");
+    lines.push("## How to use");
+    lines.push("1. Extract this bundle.");
+    lines.push("2. Push the files to GitHub.");
+    lines.push("3. Import the repo into Vercel.");
+    lines.push("4. Add VITE_API_URL in the Vercel project settings.");
+    if (structure.hasBackend) {
+      lines.push("");
+      lines.push("## Backend note");
+      lines.push("This project contains a backend. Deploy the backend separately to Render or another API host, then point VITE_API_URL to that backend URL.");
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function buildDeployExportFiles(target, files, context) {
+  const normalized = augmentGeneratedFilesWithSmartPackage(files, context);
+  const folderName = sanitizeProjectName(context?.prompt || context?.folderName || context?.appType || "builder-project");
+  const structure = detectProjectStructure(normalized);
+  const extraFiles = [];
+
+  if (target === "render") {
+    extraFiles.push({
+      path: "render.yaml",
+      content: buildRenderYaml(structure, folderName),
+      language: "yaml",
+      generatedBy: "deploy-export",
+    });
+  }
+
+  if (target === "vercel") {
+    extraFiles.push({
+      path: "vercel.json",
+      content: buildVercelJson(structure),
+      language: "json",
+      generatedBy: "deploy-export",
+    });
+  }
+
+  extraFiles.push({
+    path: `DEPLOY_${target.toUpperCase()}.md`,
+    content: buildDeployNotes(target, structure, folderName),
+    language: "markdown",
+    generatedBy: "deploy-export",
+  });
+
+  return {
+    folderName,
+    target,
+    files: [...normalized, ...extraFiles],
+  };
+}
+
 function makeStatusText(layout, modules, result) {
   const activeLayout = [
     layout.shell,
@@ -1181,6 +1309,33 @@ function formatSystemLabel(key) {
   return SYSTEM_LIBRARY[key]?.label || key;
 }
 
+function extractOrchestratedFiles(payload) {
+  const candidates = [
+    ...(Array.isArray(payload?.files) ? payload.files : []),
+    ...(Array.isArray(payload?.generated_files) ? payload.generated_files : []),
+    ...(Array.isArray(payload?.project_state?.files) ? payload.project_state.files : []),
+  ];
+  return normalizeGeneratedFiles(candidates);
+}
+
+function extractOrchestratedRoutes(payload, fallback = []) {
+  if (Array.isArray(payload?.routes) && payload.routes.length) return payload.routes;
+  if (Array.isArray(payload?.project_state?.routes) && payload.project_state.routes.length) return payload.project_state.routes;
+  return fallback;
+}
+
+function extractOrchestratedComponents(payload, fallback = []) {
+  if (Array.isArray(payload?.components) && payload.components.length) return payload.components;
+  if (Array.isArray(payload?.project_state?.components) && payload.project_state.components.length) return payload.project_state.components;
+  return fallback;
+}
+
+function extractOrchestratedFileTree(payload, fallback = []) {
+  if (Array.isArray(payload?.file_tree) && payload.file_tree.length) return payload.file_tree;
+  if (Array.isArray(payload?.project_state?.file_tree) && payload.project_state.file_tree.length) return payload.project_state.file_tree;
+  return fallback;
+}
+
 function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) {
   const previewTitle =
     layout.mode === "dashboard"
@@ -1356,7 +1511,10 @@ export default function App() {
       }),
     ),
   );
+  const [projectId, setProjectId] = useState(() => loadFromStorage(STORAGE_KEYS.projectId, ""));
+  const [orchestrationHistory, setOrchestrationHistory] = useState(() => loadFromStorage(STORAGE_KEYS.orchestrationHistory, []));
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [deployExportTarget, setDeployExportTarget] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
@@ -1371,6 +1529,8 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleDraft, simpleDraft), [simpleDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.mutationVersions, mutationVersions), [mutationVersions]);
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1657,6 +1817,80 @@ export default function App() {
     ]);
   }
 
+  function applyGeneratedProjectPayload(payload, fallbackContext = {}) {
+    const nextRoutes = extractOrchestratedRoutes(payload, fallbackContext.routes || generatedRoutes || []);
+    const nextComponents = extractOrchestratedComponents(payload, fallbackContext.components || generatedComponents || []);
+    const nextFileTree = extractOrchestratedFileTree(payload, fallbackContext.fileTree || generatedFileTree || []);
+    const rawFiles = extractOrchestratedFiles(payload);
+    const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
+      prompt: fallbackContext.prompt || payload?.prompt || prompt,
+      appType: payload?.app_type || fallbackContext.appType || featureState.appType,
+      builderMode: payload?.builder_mode || fallbackContext.builderMode || featureState.builderMode,
+      routes: nextRoutes,
+      components: nextComponents,
+    });
+
+    if (payload?.project_id) {
+      setProjectId(payload.project_id);
+      setOrchestrationHistory((prev) => [
+        {
+          id: uid("orch"),
+          projectId: payload.project_id,
+          prompt: fallbackContext.prompt || payload?.prompt || prompt,
+          time: nowLabel(),
+        },
+        ...prev.filter((item) => item.projectId !== payload.project_id),
+      ].slice(0, 12));
+    }
+
+    setGeneratedFileTree(nextFileTree);
+    setGeneratedRoutes(nextRoutes);
+    setGeneratedComponents(nextComponents);
+    setGeneratedCodeFiles(files);
+    setSelectedGeneratedFilePath(files[0]?.path || "");
+    return { files, nextRoutes, nextComponents, nextFileTree };
+  }
+
+  async function runOrchestrationFlow(sourcePrompt, options = {}) {
+    const payload = {
+      prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
+      project_id: options.projectId ?? projectId || undefined,
+      app_type: options.appType || featureState.appType,
+      builder_mode: options.builderMode || featureState.builderMode,
+      style: simpleDraft.style || "Dark glass",
+      routes: options.routes || generatedRoutes,
+      components: options.components || generatedComponents,
+      current_files: options.currentFiles || generatedCodeFiles,
+      system_planner: systemPlanner,
+      system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
+      feature_state: featureState,
+      current_layout: layoutState,
+      active_modules: activeModules,
+    };
+
+    const response = await fetch(`${API_BASE}/orchestrate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error("Orchestration request failed");
+    const data = await response.json();
+    const applied = applyGeneratedProjectPayload(data, {
+      prompt: sourcePrompt,
+      appType: options.appType || featureState.appType,
+      builderMode: options.builderMode || featureState.builderMode,
+      routes: options.routes || generatedRoutes,
+      components: options.components || generatedComponents,
+      fileTree: options.fileTree || generatedFileTree,
+    });
+
+    if (Array.isArray(data.next_best_actions)) setBackendNextActions(data.next_best_actions);
+    if (Array.isArray(data.mutation_summary)) setBackendMutationSummary(data.mutation_summary);
+
+    return { ...data, ...applied };
+  }
+
   function buildMutationLoopPrompt(instruction) {
     const basePrompt = prompt || featureState.quickIdea || `${featureState.appType} ${featureState.builderMode}`;
     return [
@@ -1805,6 +2039,67 @@ export default function App() {
     }
   }
 
+
+async function downloadDeploymentBundle(target) {
+  if (!generatedCodeFiles.length) {
+    setStatusMessage("Generate code first so the deployment export can be created.");
+    return;
+  }
+
+  const exportTarget = target === "vercel" ? "vercel" : "render";
+  const context = {
+    prompt,
+    appType: featureState.appType,
+    builderMode: featureState.builderMode,
+    routes: generatedRoutes,
+    components: generatedComponents,
+    folderName: sanitizeProjectName(prompt || featureState.quickIdea || "builder-project"),
+  };
+
+  try {
+    setDeployExportTarget(exportTarget);
+    setStatusMessage(`Preparing ${exportTarget} export...`);
+
+    const bundle = buildDeployExportFiles(exportTarget, generatedCodeFiles, context);
+    const zip = new JSZip();
+    const root = zip.folder(`${bundle.folderName}-${exportTarget}`);
+
+    bundle.files.forEach((file) => {
+      root.file(file.path, file.content || "");
+    });
+
+    root.file(
+      ".builder-deploy-meta.json",
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          target: exportTarget,
+          prompt,
+          projectId: projectId || "",
+          appType: featureState.appType,
+          builderMode: featureState.builderMode,
+          fileCount: bundle.files.length,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    triggerBrowserDownload(blob, `${bundle.folderName}-${exportTarget}.zip`);
+    appendMutationLog({
+      type: "deploy-export",
+      command: exportTarget,
+      details: `Exported ${exportTarget} bundle with ${bundle.files.length} files.`,
+    });
+    setStatusMessage(`${exportTarget === "render" ? "Render" : "Vercel"} export ready.`);
+  } catch (error) {
+    setStatusMessage(`${exportTarget} export failed: ${error.message}`);
+  } finally {
+    setDeployExportTarget("");
+  }
+}
+
   async function handleGeneratedAppMutation(customInstruction) {
     const instruction = (customInstruction ?? mutationLoopInput).trim();
     if (!instruction) {
@@ -1945,40 +2240,59 @@ export default function App() {
   }
 
   async function runGenerateCodeBundle(sourcePrompt, appType, builderMode, routes, components) {
-    const response = await fetch(`${API_BASE}/generate-code`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
-        app_type: appType,
-        builder_mode: builderMode,
-        style: simpleDraft.style || "Dark glass",
+    try {
+      const orchestrationData = await runOrchestrationFlow(sourcePrompt, {
+        appType,
+        builderMode,
         routes,
         components,
-        system_planner: systemPlanner,
-        system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
-      }),
-    });
+        currentFiles: generatedCodeFiles,
+        fileTree: generatedFileTree,
+      });
 
-    if (!response.ok) throw new Error("Code generation request failed");
-    const data = await response.json();
-    const rawFiles = Array.isArray(data.generated_files) ? data.generated_files : [];
-    const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
-      prompt: sourcePrompt,
-      appType,
-      builderMode,
-      routes,
-      components,
-    });
-    setGeneratedCodeFiles(files);
-    setSelectedGeneratedFilePath(files[0]?.path || "");
-    appendMutationLog({
-      type: "code-generation",
-      command: sourcePrompt,
-      details: `Generated ${files.length} code files including smart package support files.`,
-    });
-    setStatusMessage(`Generated ${files.length} files with smart package support.`);
-    return data;
+      appendMutationLog({
+        type: projectId ? "orchestration-update" : "orchestration-create",
+        command: sourcePrompt,
+        details: `Orchestrated project ${orchestrationData.project_id || projectId || "local"} with ${orchestrationData.files?.length || 0} files.`,
+      });
+      setStatusMessage(`Project ${orchestrationData.project_id || projectId || "local"} synced with orchestration flow.`);
+      return orchestrationData;
+    } catch (orchestrationError) {
+      const response = await fetch(`${API_BASE}/generate-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `${sourcePrompt}${buildSystemPlannerPromptBlock(systemPlanner)}`,
+          app_type: appType,
+          builder_mode: builderMode,
+          style: simpleDraft.style || "Dark glass",
+          routes,
+          components,
+          system_planner: systemPlanner,
+          system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
+        }),
+      });
+
+      if (!response.ok) throw new Error("Code generation request failed");
+      const data = await response.json();
+      const rawFiles = Array.isArray(data.generated_files) ? data.generated_files : [];
+      const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
+        prompt: sourcePrompt,
+        appType,
+        builderMode,
+        routes,
+        components,
+      });
+      setGeneratedCodeFiles(files);
+      setSelectedGeneratedFilePath(files[0]?.path || "");
+      appendMutationLog({
+        type: "code-generation-fallback",
+        command: sourcePrompt,
+        details: `Fallback generated ${files.length} code files including smart package support files.`,
+      });
+      setStatusMessage(`Fallback code generation used: ${orchestrationError.message}`);
+      return data;
+    }
   }
 
   async function runBuilderBrain(customPrompt) {
@@ -3141,7 +3455,10 @@ export default function App() {
                   <div className="simple-builder-grid" style={{ marginTop: 12 }}>
                     <div className="result-box">
                       <div className="module-top">
-                        <strong>Generated code files</strong>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <strong>Generated code files</strong>
+                          <span className="muted" style={{ fontSize: 12 }}>Deploy exports prepare Render and Vercel-ready bundles without removing your existing zip flow.</span>
+                        </div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                           <button
                             className="mini-btn"
@@ -3155,6 +3472,22 @@ export default function App() {
                             disabled={!generatedCodeFiles.length || isDownloadingZip}
                           >
                             {isDownloadingZip ? "Building zip..." : "Download project zip"}
+                          </button>
+                          <button
+                            className="mini-btn"
+                            onClick={() => downloadDeploymentBundle("render")}
+                            disabled={!generatedCodeFiles.length || Boolean(deployExportTarget)}
+                            title="Prepare a deploy-ready export for Render"
+                          >
+                            {deployExportTarget === "render" ? "Preparing Render..." : "Export Render bundle"}
+                          </button>
+                          <button
+                            className="mini-btn"
+                            onClick={() => downloadDeploymentBundle("vercel")}
+                            disabled={!generatedCodeFiles.length || Boolean(deployExportTarget)}
+                            title="Prepare a deploy-ready export for Vercel"
+                          >
+                            {deployExportTarget === "vercel" ? "Preparing Vercel..." : "Export Vercel bundle"}
                           </button>
                         </div>
                       </div>
@@ -3233,6 +3566,7 @@ export default function App() {
                       </div>
                       <p className="muted" style={{ marginTop: 8 }}>
                         Type an improvement request, apply the mutation, then refresh the live preview automatically.
+                        {projectId ? ` Continuing project ${projectId.slice(0, 8)}.` : " The first generation will create a tracked project automatically."}
                       </p>
                       <textarea
                         value={mutationLoopInput}
