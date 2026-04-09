@@ -1311,6 +1311,83 @@ function formatSystemLabel(key) {
   return SYSTEM_LIBRARY[key]?.label || key;
 }
 
+
+function escapePreviewHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function inferPreviewRoutes(routes = [], files = [], appType = "") {
+  if (Array.isArray(routes) && routes.length) {
+    return routes.map((route, index) => ({
+      path: route.path || `/route-${index + 1}`,
+      component: route.component || "Page",
+      reason: route.reason || "",
+    }));
+  }
+
+  const inferred = files
+    .filter((file) => /src\/pages\/.+\.(jsx|js|tsx|ts)$/i.test(file.path || ""))
+    .map((file) => {
+      const name = String(file.path || "").split("/").pop().replace(/\.(jsx|js|tsx|ts)$/i, "");
+      const slug = name
+        .replace(/Page$/i, "")
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase();
+      return {
+        path: slug === "app" ? "/" : `/${slug || "page"}`,
+        component: name,
+        reason: "Inferred from generated page file",
+      };
+    });
+
+  if (inferred.length) return inferred;
+
+  return [{
+    path:
+      appType === "admin panel" ? "/dashboard"
+      : appType === "assistant app" ? "/assistant"
+      : appType === "content app" ? "/studio"
+      : "/tool",
+    component: "App",
+    reason: "Default preview route",
+  }];
+}
+
+function detectPreviewAuthState({ files = [], routes = [], components = [], systemPlanner, featureState }) {
+  const allText = [
+    ...(files || []).map((file) => `${file.path || ""} ${file.content || ""}`),
+    ...(routes || []).map((route) => `${route.path || ""} ${route.component || ""}`),
+    ...(components || []).map((component) => `${component.name || ""} ${component.purpose || ""}`),
+    ...(systemPlanner?.systems || []),
+    featureState?.appType || "",
+    featureState?.builderMode || "",
+  ].join(" ").toLowerCase();
+
+  const enabled = /(auth|login|register|signin|sign in|protected|token|jwt|session|profile)/.test(allText);
+  const hasAdmin = /(admin|portal|dealer|technician|staff|role)/.test(allText);
+
+  return {
+    enabled,
+    hasAdmin,
+    label: enabled ? (hasAdmin ? "Auth + roles" : "Auth enabled") : "Guest preview",
+  };
+}
+
+function buildPreviewPageSummary(currentRoute, authState, featureState, prompt) {
+  if (!currentRoute) return "Generated app preview ready.";
+  const routePath = currentRoute.path || "/";
+  const pageName = currentRoute.component || "Page";
+  const authLine = !authState?.enabled
+    ? "This page is currently visible in guest preview mode."
+    : routePath.includes("login") || routePath.includes("register")
+      ? "This route is part of the auth flow and previews the signed-out experience."
+      : "This page is being previewed inside an authenticated shell simulation.";
+  return `${pageName} · ${routePath}. ${authLine} ${prompt ? `Idea: ${prompt}.` : ""}`;
+}
+
 function extractOrchestratedFiles(payload) {
   const candidates = [
     ...(Array.isArray(payload?.files) ? payload.files : []),
@@ -1343,8 +1420,8 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
     layout.mode === "dashboard"
       ? "Builder Dashboard"
       : layout.mode === "focus"
-        ? "Focused Canvas"
-        : "Workspace Preview";
+      ? "Focused Canvas"
+      : "Workspace Preview";
 
   if (layout.previewStyle === "dashboard") {
     return (
@@ -1497,6 +1574,8 @@ export default function App() {
   const [generatedCodeFiles, setGeneratedCodeFiles] = useState([]);
   const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState("");
   const [livePreviewDoc, setLivePreviewDoc] = useState("");
+  const [selectedPreviewRoute, setSelectedPreviewRoute] = useState("/");
+  const [previewAuthMode, setPreviewAuthMode] = useState("guest");
   const [mutationLoopInput, setMutationLoopInput] = useState("");
   const [isMutatingGeneratedApp, setIsMutatingGeneratedApp] = useState(false);
   const [mutationVersions, setMutationVersions] = useState(() => loadFromStorage(STORAGE_KEYS.mutationVersions, []));
@@ -1574,6 +1653,23 @@ export default function App() {
   }, [simpleFlowStep, simplePendingPrompt]);
 
   useEffect(() => {
+    if (!previewRoutes.length) return;
+    if (!previewRoutes.some((route) => route.path === selectedPreviewRoute)) {
+      setSelectedPreviewRoute(previewRoutes[0].path);
+    }
+  }, [previewRoutes, selectedPreviewRoute]);
+
+  useEffect(() => {
+    if (!previewAuthState.enabled && previewAuthMode !== "guest") {
+      setPreviewAuthMode("guest");
+      return;
+    }
+    if (previewAuthState.enabled && previewAuthMode === "guest") {
+      setPreviewAuthMode(previewAuthState.hasAdmin ? "member" : "member");
+    }
+  }, [previewAuthState.enabled, previewAuthState.hasAdmin, previewAuthMode]);
+
+  useEffect(() => {
     setSystemPlanner((previous) => inferSystemPlanner({
       prompt,
       appType: featureState.appType,
@@ -1610,6 +1706,25 @@ export default function App() {
     [generatedCodeFiles, selectedGeneratedFilePath],
   );
   const latestMutationVersion = useMemo(() => mutationVersions[0] || null, [mutationVersions]);
+
+  const previewRoutes = useMemo(
+    () => inferPreviewRoutes(generatedRoutes, generatedCodeFiles, featureState.appType),
+    [generatedRoutes, generatedCodeFiles, featureState.appType],
+  );
+  const previewAuthState = useMemo(
+    () => detectPreviewAuthState({
+      files: generatedCodeFiles,
+      routes: generatedRoutes,
+      components: generatedComponents,
+      systemPlanner,
+      featureState,
+    }),
+    [generatedCodeFiles, generatedRoutes, generatedComponents, systemPlanner, featureState],
+  );
+  const activePreviewRoute = useMemo(
+    () => previewRoutes.find((route) => route.path === selectedPreviewRoute) || previewRoutes[0] || null,
+    [previewRoutes, selectedPreviewRoute],
+  );
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
@@ -1627,16 +1742,8 @@ export default function App() {
 
     const cssFile = generatedCodeFiles.find((file) => file.path === "src/styles/app.css");
     const appFile = generatedCodeFiles.find((file) => file.path === "src/App.jsx");
-    const routeLabel =
-      generatedRoutes[0]?.path ||
-      (featureState.appType === "admin panel"
-        ? "/dashboard"
-        : featureState.appType === "assistant app"
-          ? "/assistant"
-          : featureState.appType === "content app"
-            ? "/studio"
-            : "/tool");
-
+    const routeItems = previewRoutes.length ? previewRoutes : inferPreviewRoutes(generatedRoutes, generatedCodeFiles, featureState.appType);
+    const currentRoute = routeItems.find((route) => route.path === selectedPreviewRoute) || routeItems[0] || null;
     const previewTitle =
       featureState.appType === "admin panel"
         ? "Generated Admin Dashboard"
@@ -1647,31 +1754,55 @@ export default function App() {
             : "Generated Tool App";
 
     const appSnippet = appFile?.content
-      ? appFile.content.slice(0, 900).replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      ? escapePreviewHtml(appFile.content.slice(0, 900))
       : "Generated app source preview unavailable.";
 
     const componentCards = generatedComponents.length
       ? generatedComponents.map((component) => `
           <div class="runner-chip">
-            <strong>${component.name}</strong>
-            <span>${component.purpose}</span>
+            <strong>${escapePreviewHtml(component.name)}</strong>
+            <span>${escapePreviewHtml(component.purpose)}</span>
           </div>
         `).join("\n")
       : `<div class="runner-empty">No generated components yet.</div>`;
 
     const fileCards = generatedCodeFiles.slice(0, 8).map((file) => `
       <div class="runner-file">
-        <strong>${file.path}</strong>
-        <span>${file.language || "code"}</span>
+        <strong>${escapePreviewHtml(file.path)}</strong>
+        <span>${escapePreviewHtml(file.language || "code")}</span>
       </div>
     `).join("\n");
+
+    const routeTabs = routeItems.map((route) => `
+      <button class="runner-route ${route.path === (currentRoute?.path || "") ? "active" : ""}">
+        <span>${escapePreviewHtml(route.path)}</span>
+        <small>${escapePreviewHtml(route.component || "Page")}</small>
+      </button>
+    `).join("\n");
+
+    const authPills = previewAuthState.enabled
+      ? [
+          `<div class="runner-auth-pill ${previewAuthMode === "member" ? "active" : ""}">Member preview</div>`,
+          previewAuthState.hasAdmin ? `<div class="runner-auth-pill ${previewAuthMode === "admin" ? "active" : ""}">Admin preview</div>` : "",
+          `<div class="runner-auth-pill ${previewAuthMode === "guest" ? "active" : ""}">Signed-out preview</div>`,
+        ].join("")
+      : `<div class="runner-auth-pill active">Guest preview</div>`;
+
+    const pageSummary = escapePreviewHtml(buildPreviewPageSummary(currentRoute, previewAuthState, featureState, prompt));
+    const authBanner = previewAuthState.enabled
+      ? previewAuthMode === "guest"
+        ? "Signed-out preview shell"
+        : previewAuthMode === "admin"
+          ? "Authenticated admin shell"
+          : "Authenticated member shell"
+      : "Guest preview shell";
 
     const previewDoc = `<!doctype html>
 <html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${previewTitle}</title>
+    <title>${escapePreviewHtml(previewTitle)}</title>
     <style>
       ${cssFile?.content || ""}
       body {
@@ -1704,7 +1835,9 @@ export default function App() {
         margin-top: 12px;
       }
       .runner-chip,
-      .runner-file {
+      .runner-file,
+      .runner-route,
+      .runner-auth-pill {
         border: 1px solid rgba(148,163,184,.14);
         border-radius: 16px;
         padding: 14px;
@@ -1712,10 +1845,77 @@ export default function App() {
         display: grid;
         gap: 6px;
       }
+      .runner-route small,
       .runner-chip span,
       .runner-file span,
       .runner-muted {
         color: #93a4bf;
+      }
+      .runner-routes,
+      .runner-auth {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .runner-route.active,
+      .runner-auth-pill.active {
+        border-color: rgba(102,217,239,.45);
+        box-shadow: 0 0 0 1px rgba(102,217,239,.18) inset;
+      }
+      .runner-sim-shell {
+        border: 1px solid rgba(148,163,184,.14);
+        border-radius: 18px;
+        background: rgba(255,255,255,.025);
+        overflow: hidden;
+      }
+      .runner-sim-topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(148,163,184,.12);
+      }
+      .runner-sim-body {
+        display: grid;
+        grid-template-columns: ${previewAuthState.enabled || featureState.appType === "admin panel" ? "220px 1fr" : "1fr"};
+        min-height: 320px;
+      }
+      .runner-sim-nav {
+        border-right: 1px solid rgba(148,163,184,.12);
+        padding: 16px;
+        display: ${previewAuthState.enabled || featureState.appType === "admin panel" ? "grid" : "none"};
+        gap: 10px;
+        align-content: start;
+      }
+      .runner-nav-item {
+        border: 1px solid rgba(148,163,184,.12);
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,.03);
+      }
+      .runner-sim-content {
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+      .runner-summary {
+        border: 1px solid rgba(148,163,184,.14);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255,255,255,.03);
+      }
+      .runner-kpis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+      }
+      .runner-kpi {
+        border: 1px solid rgba(148,163,184,.12);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255,255,255,.025);
       }
       .runner-code {
         margin-top: 12px;
@@ -1743,7 +1943,8 @@ export default function App() {
         margin-top: 12px;
       }
       @media (max-width: 900px) {
-        .runner-grid {
+        .runner-grid,
+        .runner-sim-body {
           grid-template-columns: 1fr;
         }
       }
@@ -1752,10 +1953,38 @@ export default function App() {
   <body>
     <div class="runner-shell">
       <section class="runner-hero">
-        <div class="pill">${previewTitle}</div>
-        <h1 style="margin:12px 0 6px;">${prompt || "Generated app preview"}</h1>
-        <p class="runner-muted">Live preview runner for ${routeLabel}. This is a rendered starter shell generated by your builder.</p>
-        <button class="runner-button">Primary action</button>
+        <div class="pill">${escapePreviewHtml(previewTitle)}</div>
+        <h1 style="margin:12px 0 6px;">${escapePreviewHtml(prompt || "Generated app preview")}</h1>
+        <p class="runner-muted">Live preview runner for ${escapePreviewHtml(currentRoute?.path || "/")}. ${escapePreviewHtml(authBanner)}.</p>
+        <div class="runner-routes">${routeTabs}</div>
+        <div class="runner-auth">${authPills}</div>
+        <button class="runner-button">${previewAuthState.enabled ? "Open current flow" : "Explore generated app"}</button>
+      </section>
+
+      <section class="runner-panel">
+        <div class="runner-sim-shell">
+          <div class="runner-sim-topbar">
+            <strong>${escapePreviewHtml(currentRoute?.component || "Page")}</strong>
+            <span class="runner-muted">${escapePreviewHtml(currentRoute?.path || "/")} · ${escapePreviewHtml(authBanner)}</span>
+          </div>
+          <div class="runner-sim-body">
+            <aside class="runner-sim-nav">
+              ${routeItems.slice(0, 6).map((route) => `<div class="runner-nav-item">${escapePreviewHtml(route.path)}</div>`).join("")}
+            </aside>
+            <div class="runner-sim-content">
+              <div class="runner-summary">
+                <strong>Current page summary</strong>
+                <p class="runner-muted" style="margin:8px 0 0;">${pageSummary}</p>
+              </div>
+              <div class="runner-kpis">
+                <div class="runner-kpi"><strong>${escapePreviewHtml(featureState.appType)}</strong><div class="runner-muted">App type</div></div>
+                <div class="runner-kpi"><strong>${escapePreviewHtml(featureState.builderMode)}</strong><div class="runner-muted">Builder mode</div></div>
+                <div class="runner-kpi"><strong>${generatedCodeFiles.length}</strong><div class="runner-muted">Generated files</div></div>
+                <div class="runner-kpi"><strong>${routeItems.length}</strong><div class="runner-muted">Routes</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <div class="runner-grid">
@@ -1778,8 +2007,7 @@ export default function App() {
   </body>
 </html>`;
     setLivePreviewDoc(previewDoc);
-  }, [generatedCodeFiles, generatedComponents, generatedRoutes, featureState.appType, prompt]);
-
+  }, [generatedCodeFiles, generatedComponents, generatedRoutes, featureState.appType, featureState.builderMode, previewRoutes, selectedPreviewRoute, previewAuthState, previewAuthMode, prompt]);
 
   function appendBuilderChatMessage(message) {
     setBuilderChatHistory((prev) => [{
@@ -2120,65 +2348,65 @@ export default function App() {
   }
 
 
-  async function downloadDeploymentBundle(target) {
-    if (!generatedCodeFiles.length) {
-      setStatusMessage("Generate code first so the deployment export can be created.");
-      return;
-    }
-
-    const exportTarget = target === "vercel" ? "vercel" : "render";
-    const context = {
-      prompt,
-      appType: featureState.appType,
-      builderMode: featureState.builderMode,
-      routes: generatedRoutes,
-      components: generatedComponents,
-      folderName: sanitizeProjectName(prompt || featureState.quickIdea || "builder-project"),
-    };
-
-    try {
-      setDeployExportTarget(exportTarget);
-      setStatusMessage(`Preparing ${exportTarget} export...`);
-
-      const bundle = buildDeployExportFiles(exportTarget, generatedCodeFiles, context);
-      const zip = new JSZip();
-      const root = zip.folder(`${bundle.folderName}-${exportTarget}`);
-
-      bundle.files.forEach((file) => {
-        root.file(file.path, file.content || "");
-      });
-
-      root.file(
-        ".builder-deploy-meta.json",
-        JSON.stringify(
-          {
-            generatedAt: new Date().toISOString(),
-            target: exportTarget,
-            prompt,
-            projectId: projectId || "",
-            appType: featureState.appType,
-            builderMode: featureState.builderMode,
-            fileCount: bundle.files.length,
-          },
-          null,
-          2,
-        ),
-      );
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      triggerBrowserDownload(blob, `${bundle.folderName}-${exportTarget}.zip`);
-      appendMutationLog({
-        type: "deploy-export",
-        command: exportTarget,
-        details: `Exported ${exportTarget} bundle with ${bundle.files.length} files.`,
-      });
-      setStatusMessage(`${exportTarget === "render" ? "Render" : "Vercel"} export ready.`);
-    } catch (error) {
-      setStatusMessage(`${exportTarget} export failed: ${error.message}`);
-    } finally {
-      setDeployExportTarget("");
-    }
+async function downloadDeploymentBundle(target) {
+  if (!generatedCodeFiles.length) {
+    setStatusMessage("Generate code first so the deployment export can be created.");
+    return;
   }
+
+  const exportTarget = target === "vercel" ? "vercel" : "render";
+  const context = {
+    prompt,
+    appType: featureState.appType,
+    builderMode: featureState.builderMode,
+    routes: generatedRoutes,
+    components: generatedComponents,
+    folderName: sanitizeProjectName(prompt || featureState.quickIdea || "builder-project"),
+  };
+
+  try {
+    setDeployExportTarget(exportTarget);
+    setStatusMessage(`Preparing ${exportTarget} export...`);
+
+    const bundle = buildDeployExportFiles(exportTarget, generatedCodeFiles, context);
+    const zip = new JSZip();
+    const root = zip.folder(`${bundle.folderName}-${exportTarget}`);
+
+    bundle.files.forEach((file) => {
+      root.file(file.path, file.content || "");
+    });
+
+    root.file(
+      ".builder-deploy-meta.json",
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          target: exportTarget,
+          prompt,
+          projectId: projectId || "",
+          appType: featureState.appType,
+          builderMode: featureState.builderMode,
+          fileCount: bundle.files.length,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    triggerBrowserDownload(blob, `${bundle.folderName}-${exportTarget}.zip`);
+    appendMutationLog({
+      type: "deploy-export",
+      command: exportTarget,
+      details: `Exported ${exportTarget} bundle with ${bundle.files.length} files.`,
+    });
+    setStatusMessage(`${exportTarget === "render" ? "Render" : "Vercel"} export ready.`);
+  } catch (error) {
+    setStatusMessage(`${exportTarget} export failed: ${error.message}`);
+  } finally {
+    setDeployExportTarget("");
+  }
+}
 
   async function handleGeneratedAppMutation(customInstruction) {
     const instruction = (customInstruction ?? mutationLoopInput).trim();
@@ -2670,9 +2898,9 @@ export default function App() {
       prev.map((item) =>
         item.id === id
           ? {
-            ...item,
-            [field]: field === "name" ? value : Number(value),
-          }
+              ...item,
+              [field]: field === "name" ? value : Number(value),
+            }
           : item,
       ),
     );
@@ -3357,10 +3585,10 @@ export default function App() {
                       selectedSimpleStarter.key === "dashboard"
                         ? "admin panel"
                         : selectedSimpleStarter.key === "assistant"
-                          ? "assistant app"
-                          : selectedSimpleStarter.key === "content"
-                            ? "content app"
-                            : "tool app",
+                        ? "assistant app"
+                        : selectedSimpleStarter.key === "content"
+                        ? "content app"
+                        : "tool app",
                   }}
                   result={result}
                   prompt={buildSimpleStarterPrompt(simpleDraft)}
@@ -3389,8 +3617,8 @@ export default function App() {
                           {index === 0
                             ? selectedSimpleStarter.label
                             : index === 1
-                              ? getLayoutLabel(layoutState)
-                              : "Simple mode is preparing the first real builder view."}
+                            ? getLayoutLabel(layoutState)
+                            : "Simple mode is preparing the first real builder view."}
                         </div>
                       </div>
                     </div>
@@ -3687,6 +3915,46 @@ export default function App() {
                         Refresh preview
                       </button>
                     </div>
+                    {generatedCodeFiles.length ? (
+                      <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {previewRoutes.map((route) => (
+                            <button
+                              key={route.path}
+                              className={`mini-btn ${selectedPreviewRoute === route.path ? "active" : ""}`}
+                              onClick={() => setSelectedPreviewRoute(route.path)}
+                            >
+                              {route.path}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span className="tag">{previewAuthState.label}</span>
+                          <button
+                            className={`mini-btn ${previewAuthMode === "guest" ? "active" : ""}`}
+                            onClick={() => setPreviewAuthMode("guest")}
+                          >
+                            Guest
+                          </button>
+                          {previewAuthState.enabled ? (
+                            <button
+                              className={`mini-btn ${previewAuthMode === "member" ? "active" : ""}`}
+                              onClick={() => setPreviewAuthMode("member")}
+                            >
+                              Member
+                            </button>
+                          ) : null}
+                          {previewAuthState.enabled && previewAuthState.hasAdmin ? (
+                            <button
+                              className={`mini-btn ${previewAuthMode === "admin" ? "active" : ""}`}
+                              onClick={() => setPreviewAuthMode("admin")}
+                            >
+                              Admin
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     {livePreviewDoc ? (
                       <iframe
                         title="Generated app live preview"
@@ -3882,219 +4150,219 @@ export default function App() {
       ) : null}
 
       {uiMode === "pro" ? (
-        <>
-          <div className="shell-grid">
+      <>
+      <div className="shell-grid">
 
-            {layoutState.sidebar ? (
-              <aside className="sidebar">
-                <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
-                  <div className="sidebar-nav">
-                    {sidebarItems.map((item) => (
-                      <button
-                        key={item.key}
-                        className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
-                        onClick={() => setSelectedSidebarView(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+        {layoutState.sidebar ? (
+          <aside className="sidebar">
+            <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
+              <div className="sidebar-nav">
+                {sidebarItems.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
+                    onClick={() => setSelectedSidebarView(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+            <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Shell</strong>
+                    <span className="tag">{layoutState.shell}</span>
                   </div>
-                </Panel>
-                <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Shell</strong>
-                        <span className="tag">{layoutState.shell}</span>
-                      </div>
-                      <div className="muted">Mode: {layoutState.mode}</div>
-                    </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Split</strong>
-                        <span className="tag">{layoutState.split ? "On" : "Off"}</span>
-                      </div>
-                      <div className="muted">Preview style: {layoutState.previewStyle}</div>
-                    </div>
+                  <div className="muted">Mode: {layoutState.mode}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Split</strong>
+                    <span className="tag">{layoutState.split ? "On" : "Off"}</span>
                   </div>
-                </Panel>
-              </aside>
+                  <div className="muted">Preview style: {layoutState.previewStyle}</div>
+                </div>
+              </div>
+            </Panel>
+          </aside>
+        ) : null}
+
+        <main className="main-workspace">
+          <div className="stack">
+            <Panel
+              title="Builder Brain"
+              subtitle="Detects app type, builder mode, summary style, and recommended modules"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
+                </>
+              }
+            >
+              <div className="brain-grid">
+                <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
+                <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
+                <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <textarea
+                className="prompt-box"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
+              />
+              <div style={{ height: 12 }} />
+              <div className="command-row">
+                {QUICK_COMMANDS.map((item) => (
+                  <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="result-box">{builderInsight}</div>
+            </Panel>
+
+            <Panel
+              title="Command Mutations"
+              subtitle="This now mutates modules and the workspace shell"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
+                  <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
+                </>
+              }
+            >
+              <div className="status-grid">
+                <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
+                <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
+                <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="module-list">
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Latest status</strong>
+                    <span className="tag">Live</span>
+                  </div>
+                  <div className="muted">{statusMessage}</div>
+                </div>
+                <div className="module-item">
+                  <div className="module-top">
+                    <strong>Workspace shape</strong>
+                    <span className="tag">{getLayoutLabel(layoutState)}</span>
+                  </div>
+                  <div className="muted">Use natural commands to reshape the app shell.</div>
+                </div>
+              </div>
+            </Panel>
+
+            {activeModules.includes("quick_actions") ? (
+              <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
+                <div className="quick-grid">
+                  <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
+                  <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
+                  <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
+                  <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
+                  <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
+                </div>
+              </Panel>
             ) : null}
 
-            <main className="main-workspace">
-              <div className="stack">
-                <Panel
-                  title="Builder Brain"
-                  subtitle="Detects app type, builder mode, summary style, and recommended modules"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
-                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
-                    </>
-                  }
-                >
-                  <div className="brain-grid">
-                    <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
-                    <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
-                    <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <textarea
-                    className="prompt-box"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
-                  />
-                  <div style={{ height: 12 }} />
-                  <div className="command-row">
-                    {QUICK_COMMANDS.map((item) => (
-                      <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{builderInsight}</div>
-                </Panel>
-
-                <Panel
-                  title="Command Mutations"
-                  subtitle="This now mutates modules and the workspace shell"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
-                      <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
-                    </>
-                  }
-                >
-                  <div className="status-grid">
-                    <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
-                    <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
-                    <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="module-list">
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Latest status</strong>
-                        <span className="tag">Live</span>
-                      </div>
-                      <div className="muted">{statusMessage}</div>
+            <Panel
+              title="Battery Planner Builder"
+              subtitle="Your backend is still connected. This stays as a real functional module."
+              actions={
+                <>
+                  <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
+                    {isLoading ? "Running..." : "Run /battery-plan"}
+                  </button>
+                  <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
+                </>
+              }
+            >
+              <div className="builder-form">
+                <div className="appliance-table">
+                  {appliances.map((item) => (
+                    <div key={item.id} className="appliance-row">
+                      <input
+                        className="text-input"
+                        value={item.name}
+                        onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
+                        placeholder="Appliance"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.watts}
+                        onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
+                        placeholder="Watts"
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        value={item.hours}
+                        onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
+                        placeholder="Hours"
+                      />
+                      <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
                     </div>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Workspace shape</strong>
-                        <span className="tag">{getLayoutLabel(layoutState)}</span>
-                      </div>
-                      <div className="muted">Use natural commands to reshape the app shell.</div>
-                    </div>
-                  </div>
-                </Panel>
-
-                {activeModules.includes("quick_actions") ? (
-                  <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
-                    <div className="quick-grid">
-                      <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
-                      <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
-                      <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
-                      <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
-                      <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
-                      <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel
-                  title="Battery Planner Builder"
-                  subtitle="Your backend is still connected. This stays as a real functional module."
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
-                        {isLoading ? "Running..." : "Run /battery-plan"}
-                      </button>
-                      <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
-                    </>
-                  }
-                >
-                  <div className="builder-form">
-                    <div className="appliance-table">
-                      {appliances.map((item) => (
-                        <div key={item.id} className="appliance-row">
-                          <input
-                            className="text-input"
-                            value={item.name}
-                            onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
-                            placeholder="Appliance"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.watts}
-                            onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
-                            placeholder="Watts"
-                          />
-                          <input
-                            className="number-input"
-                            type="number"
-                            value={item.hours}
-                            onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
-                            placeholder="Hours"
-                          />
-                          <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="appliance-presets">
-                      {APPLIANCE_PRESETS.map((preset) => (
-                        <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
-                          + {preset.name}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="result-grid">
-                      <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
-                      <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
-                      <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
-                      <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
-                    </div>
-                  </div>
-                </Panel>
-
-                <Panel
-                  title="Results Summary"
-                  subtitle="Saved results, export, and summary stay active while layout mutates"
-                  actions={
-                    <>
-                      <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
-                      <button className="mini-btn" onClick={exportReport}>Export report</button>
-                    </>
-                  }
-                >
-                  <div className="result-grid">
-                    <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
-                    <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
-                    <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
-                    <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
-                  </div>
-                  <div style={{ height: 14 }} />
-                  <div className="result-box">{computedSummary}</div>
-                  <div style={{ height: 14 }} />
-                  <div className="saved-grid">
-                    {savedResults.slice(0, 4).map((item) => (
-                      <div key={item.id} className="saved-card">
-                        <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
-                        <div className="muted">{item.time}</div>
-                        <div className="muted">{item.summary}</div>
-                        <div className="tag">{getLayoutLabel(item.layout)}</div>
-                      </div>
-                    ))}
-                    {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
-                  </div>
-                </Panel>
+                  ))}
+                </div>
+                <div className="appliance-presets">
+                  {APPLIANCE_PRESETS.map((preset) => (
+                    <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
+                      + {preset.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="result-grid">
+                  <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
+                  <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
+                  <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
+                  <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
+                </div>
               </div>
+            </Panel>
 
-              <div className="stack">
+            <Panel
+              title="Results Summary"
+              subtitle="Saved results, export, and summary stay active while layout mutates"
+              actions={
+                <>
+                  <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
+                  <button className="mini-btn" onClick={exportReport}>Export report</button>
+                </>
+              }
+            >
+              <div className="result-grid">
+                <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
+                <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
+                <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
+                <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
+              </div>
+              <div style={{ height: 14 }} />
+              <div className="result-box">{computedSummary}</div>
+              <div style={{ height: 14 }} />
+              <div className="saved-grid">
+                {savedResults.slice(0, 4).map((item) => (
+                  <div key={item.id} className="saved-card">
+                    <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
+                    <div className="muted">{item.time}</div>
+                    <div className="muted">{item.summary}</div>
+                    <div className="tag">{getLayoutLabel(item.layout)}</div>
+                  </div>
+                ))}
+                {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
+              </div>
+            </Panel>
+          </div>
 
+          <div className="stack">
+            
                 <Panel title="System Planner" subtitle="The builder now plans connected systems, not only files.">
                   <div className="module-top">
                     <strong>{systemPlanner.summary}</strong>
@@ -4176,118 +4444,118 @@ export default function App() {
                   </div>
                 </Panel>
 
-                {activeModules.includes("live_preview") ? (
-                  <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
-                    <PreviewCanvas
-                      layout={layoutState}
-                      activeModules={activeModules}
-                      featureState={featureState}
-                      result={result}
-                      prompt={prompt}
-                    />
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("active_features_panel") ? (
-                  <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
-                    <div className="module-list">
-                      {activeModuleMeta.map((module) => (
-                        <div key={module.key} className="module-item">
-                          <div className="module-top">
-                            <strong>{module.label}</strong>
-                            <span className="tag">{module.category}</span>
-                          </div>
-                          <div className="muted">{module.description}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("status_panel") ? (
-                  <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
-                    <div className="module-list">
-                      <div className="module-item">
-                        <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
-                        <div className="muted">{statusText}</div>
-                      </div>
-                      <div className="module-item">
-                        <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
-                        <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
-                      </div>
-                    </div>
-                  </Panel>
-                ) : null}
-
-                <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
-                  <div className="mutation-list">
-                    {mutationLog.slice(0, 10).map((item) => (
-                      <div key={item.id} className="mutation-item">
-                        <div className="mutation-top">
-                          <strong>{item.type}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div>{item.command}</div>
-                        <div className="muted">{item.details}</div>
-                      </div>
-                    ))}
-                    {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
-                  </div>
-                </Panel>
-              </div>
-            </main>
-
-            {layoutState.inspector ? (
-              <aside className="stack">
-                <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
-                  <div className="history-list">
-                    {commandHistory.slice(0, 5).map((item) => (
-                      <div key={item.id} className="history-item">
-                        <div className="history-top">
-                          <strong>{item.prompt}</strong>
-                          <span className="tag">{item.time}</span>
-                        </div>
-                        <div className="muted">{item.appType} · {item.builderMode}</div>
-                      </div>
-                    ))}
-                    {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
-                  </div>
-                </Panel>
-
-                {activeModules.includes("affiliate_suggestions") ? (
-                  <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
-                    <div className="affiliate-list">
-                      {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
-                        <div key={item.title} className="affiliate-item">
-                          <div className="affiliate-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">smart fit</span>
-                          </div>
-                          <div className="muted">{item.fit}</div>
-                        </div>
-                      )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
-                    </div>
-                  </Panel>
-                ) : null}
-
-                {activeModules.includes("notes_panel") ? (
-                  <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
-                    <textarea
-                      className="notes-box"
-                      value={featureState.notes}
-                      onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
-                    />
-                  </Panel>
-                ) : null}
-              </aside>
+{activeModules.includes("live_preview") ? (
+              <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
+                <PreviewCanvas
+                  layout={layoutState}
+                  activeModules={activeModules}
+                  featureState={featureState}
+                  result={result}
+                  prompt={prompt}
+                />
+              </Panel>
             ) : null}
-          </div>
 
-          <div className="footer-note">
-            Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, and the new system planner are preserved. New step: the builder now plans connected product systems before code generation.
+            {activeModules.includes("active_features_panel") ? (
+              <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
+                <div className="module-list">
+                  {activeModuleMeta.map((module) => (
+                    <div key={module.key} className="module-item">
+                      <div className="module-top">
+                        <strong>{module.label}</strong>
+                        <span className="tag">{module.category}</span>
+                      </div>
+                      <div className="muted">{module.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("status_panel") ? (
+              <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
+                <div className="module-list">
+                  <div className="module-item">
+                    <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
+                    <div className="muted">{statusText}</div>
+                  </div>
+                  <div className="module-item">
+                    <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
+                    <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
+                  </div>
+                </div>
+              </Panel>
+            ) : null}
+
+            <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
+              <div className="mutation-list">
+                {mutationLog.slice(0, 10).map((item) => (
+                  <div key={item.id} className="mutation-item">
+                    <div className="mutation-top">
+                      <strong>{item.type}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div>{item.command}</div>
+                    <div className="muted">{item.details}</div>
+                  </div>
+                ))}
+                {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
+              </div>
+            </Panel>
           </div>
-        </>
+        </main>
+
+        {layoutState.inspector ? (
+          <aside className="stack">
+            <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
+              <div className="history-list">
+                {commandHistory.slice(0, 5).map((item) => (
+                  <div key={item.id} className="history-item">
+                    <div className="history-top">
+                      <strong>{item.prompt}</strong>
+                      <span className="tag">{item.time}</span>
+                    </div>
+                    <div className="muted">{item.appType} · {item.builderMode}</div>
+                  </div>
+                ))}
+                {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
+              </div>
+            </Panel>
+
+            {activeModules.includes("affiliate_suggestions") ? (
+              <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
+                <div className="affiliate-list">
+                  {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
+                    <div key={item.title} className="affiliate-item">
+                      <div className="affiliate-top">
+                        <strong>{item.title}</strong>
+                        <span className="tag">smart fit</span>
+                      </div>
+                      <div className="muted">{item.fit}</div>
+                    </div>
+                  )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
+                </div>
+              </Panel>
+            ) : null}
+
+            {activeModules.includes("notes_panel") ? (
+              <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
+                <textarea
+                  className="notes-box"
+                  value={featureState.notes}
+                  onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
+                />
+              </Panel>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
+
+      <div className="footer-note">
+        Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, and the new system planner are preserved. New step: the builder now plans connected product systems before code generation.
+      </div>
+      </>
       ) : uiMode === "chat" ? (
         <div className="chat-builder-shell">
           <div className="chat-side-stack">
