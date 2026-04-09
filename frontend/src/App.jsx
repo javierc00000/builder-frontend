@@ -22,6 +22,7 @@ const STORAGE_KEYS = {
   builderChatDraft: "builder_chat_draft_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
+  runtimeSandboxPrefs: "builder_runtime_sandbox_prefs_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -514,6 +515,22 @@ function saveToStorage(key, value) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(value));
 }
+
+function normalizeErrorMessage(error, fallback = "Something went wrong") {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  return error.message || fallback;
+}
+
+async function safeReadJson(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { raw: text };
+  }
+}
+
 
 function slugify(text) {
   return String(text || "")
@@ -1899,6 +1916,7 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.runtimeSandboxPrefs, runtimeSandboxPrefs), [runtimeSandboxPrefs]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -2057,8 +2075,8 @@ export default function App() {
         }),
       });
 
-      if (!response.ok) throw new Error("Runtime sandbox request failed");
-      const data = await response.json();
+      const data = await safeReadJson(response);
+      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Runtime sandbox request failed");
       const nextUrl = normalizeRuntimePreviewUrl(data.preview_url || "");
 
       setRuntimeSandboxSessionId(data.session_id || "");
@@ -2087,15 +2105,25 @@ export default function App() {
     if (!runtimeSandboxSessionId) return null;
     try {
       const response = await fetch(`${API_BASE}/preview/status/${runtimeSandboxSessionId}`);
-      if (!response.ok) throw new Error("Sandbox status request failed");
-      const data = await response.json();
+      const data = await safeReadJson(response);
+      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox status request failed");
       setRuntimeSandboxStatus(data.status || "ready");
       setRuntimeSandboxMeta(data);
       if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
       if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
+      if (Array.isArray(data.errors) && data.errors.length) {
+        setRuntimeSandboxError(data.errors.join(" · "));
+        if (runtimeSandboxPrefs.autoRecover && runtimeSandboxRecoveryCount < 1 && (data.status === "error" || data.status === "degraded")) {
+          setRuntimeSandboxRecoveryCount((count) => count + 1);
+          recoverRuntimeSandbox();
+        }
+      } else {
+        setRuntimeSandboxError("");
+        setRuntimeSandboxRecoveryCount(0);
+      }
       return data;
     } catch (error) {
-      setRuntimeSandboxError(error.message || "Sandbox status failed");
+      setRuntimeSandboxError(normalizeErrorMessage(error, "Sandbox status failed"));
       return null;
     }
   }
@@ -2104,8 +2132,8 @@ export default function App() {
     if (!runtimeSandboxSessionId) return null;
     try {
       const response = await fetch(`${API_BASE}/preview/logs/${runtimeSandboxSessionId}`);
-      if (!response.ok) throw new Error("Sandbox logs request failed");
-      const data = await response.json();
+      const data = await safeReadJson(response);
+      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox logs request failed");
       setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
       return data;
     } catch (error) {
@@ -2139,8 +2167,8 @@ export default function App() {
           systems: systemPlanner?.systems || [],
         }),
       });
-      if (!response.ok) throw new Error("Sandbox reload failed");
-      const data = await response.json();
+      const data = await safeReadJson(response);
+      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox reload failed");
       setRuntimeSandboxStatus(data.status || "ready");
       setRuntimeSandboxMeta(data);
       setRuntimeSandboxLogs(Array.isArray(data.logs) ? data.logs : []);
@@ -2152,6 +2180,29 @@ export default function App() {
       return null;
     } finally {
       setIsReloadingRuntimeSandbox(false);
+    }
+  }
+
+  async function recoverRuntimeSandbox() {
+    if (!runtimeSandboxSessionId) return null;
+    try {
+      setStatusMessage("Recovering sandbox...");
+      const response = await fetch(`${API_BASE}/preview/recover/${runtimeSandboxSessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await safeReadJson(response);
+      if (!response.ok) throw new Error(data?.detail || data?.error || data?.raw || "Sandbox recovery failed");
+      setRuntimeSandboxStatus(data.status || "ready");
+      setRuntimeSandboxMeta(data);
+      if (data.preview_url) setRuntimeSandboxUrl(normalizeRuntimePreviewUrl(data.preview_url));
+      if (Array.isArray(data.logs)) setRuntimeSandboxLogs(data.logs);
+      setRuntimeSandboxError(Array.isArray(data.errors) && data.errors.length ? data.errors.join(" · ") : "");
+      setStatusMessage("Sandbox recovery completed.");
+      return data;
+    } catch (error) {
+      setRuntimeSandboxError(normalizeErrorMessage(error, "Sandbox recovery failed"));
+      return null;
     }
   }
 
@@ -2172,16 +2223,17 @@ export default function App() {
     setRuntimeSandboxMeta(null);
     setRuntimeSandboxLogs([]);
     setRuntimeSandboxError("");
+    setRuntimeSandboxRecoveryCount(0);
     setStatusMessage("Runtime sandbox reset.");
   }
 
   useEffect(() => {
-    if (!runtimeSandboxSessionId) return undefined;
+    if (!runtimeSandboxSessionId || !runtimeSandboxPrefs.autoPoll) return undefined;
     const timer = window.setInterval(() => {
       refreshRuntimeSandboxStatus();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [runtimeSandboxSessionId]);
+  }, [runtimeSandboxSessionId, runtimeSandboxPrefs.autoPoll]);
   useEffect(() => {
     if (!previewRoutes.length) return;
     if (!previewRoutes.some((route) => route.path === selectedPreviewRoute)) {
