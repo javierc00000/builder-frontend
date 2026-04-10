@@ -21,6 +21,9 @@ const STORAGE_KEYS = {
   builderChatHistory: "builder_chat_history_v1",
   builderChatDraft: "builder_chat_draft_v1",
   builderProjectMemory: "builder_project_memory_v1",
+  builderAssistantPrefs: "builder_assistant_prefs_v1",
+  fullStackScope: "builder_full_stack_scope_v1",
+  chatReplyPreference: "builder_chat_reply_preference_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
 };
@@ -639,6 +642,11 @@ function getNextBestActions({ featureState, layoutState, commandHistory, result 
   }
 
   if (!layoutState.split) {
+
+  function getActionIdentity(action) {
+    if (!action) return "";
+    return [action.key || "", action.cmd || "", action.label || ""].join("::");
+  }
     actionPool.push({
       key: "split",
       label: "Split layout",
@@ -768,6 +776,38 @@ function simplifyInsightMessage(message, hasProject) {
   if (/waiting for your next mutation command/i.test(text)) return hasProject ? "Tell me what to change next." : "Describe the app you want to build.";
   if (/type a command so the builder can mutate the workspace/i.test(text)) return "Describe what you want to build or improve.";
   return text;
+}
+
+function isBuilderWorkspaceRequest(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder)/.test(text)) return true;
+  return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui)/.test(text);
+}
+
+function inferBuilderPreferenceTags(message) {
+  const text = String(message || "").trim().toLowerCase();
+  const tags = [];
+  if (/(preview|side|center|bigger|larger|iframe|canvas)/.test(text)) tags.push("preview");
+  if (/(chat|composer|input|conversation)/.test(text)) tags.push("chat");
+  if (/(header|topbar|hero|title)/.test(text)) tags.push("header");
+  if (/(simple|clean|less|reduce|clutter|details)/.test(text)) tags.push("clarity");
+  if (/(mobile|phone|responsive)/.test(text)) tags.push("mobile");
+  if (/(layout|sidebar|split|panel)/.test(text)) tags.push("layout");
+  return [...new Set(tags)];
+}
+
+function updateBuilderAssistantPrefs(previousPrefs, message) {
+  const prev = previousPrefs || {};
+  const nextTags = inferBuilderPreferenceTags(message);
+  return {
+    name: prev.name || "Builder Copilot",
+    favoriteFocuses: [...new Set([...(Array.isArray(prev.favoriteFocuses) ? prev.favoriteFocuses : []), ...nextTags])].slice(0, 6),
+    recentRequests: [String(message || "").trim(), ...(Array.isArray(prev.recentRequests) ? prev.recentRequests : [])].filter(Boolean).slice(0, 4),
+    lastRequest: String(message || "").trim(),
+    preferredRules: Array.isArray(prev.preferredRules) ? prev.preferredRules : ["Keep preview large", "Keep chat simple"],
+    pinnedGoals: Array.isArray(prev.pinnedGoals) ? prev.pinnedGoals : [],
+  };
 }
 
 function getActiveAffiliateSuggestions(result) {
@@ -1893,6 +1933,16 @@ export default function App() {
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [chatScrollTick, setChatScrollTick] = useState(0);
+  const [chatAssistantMode, setChatAssistantMode] = useState("app");
+  const [fullStackScope, setFullStackScope] = useState(() => loadFromStorage(STORAGE_KEYS.fullStackScope, "fullstack"));
+  const [chatReplyPreference, setChatReplyPreference] = useState(() => loadFromStorage(STORAGE_KEYS.chatReplyPreference, "balanced"));
+  const [builderAssistantPrefs, setBuilderAssistantPrefs] = useState(() => loadFromStorage(STORAGE_KEYS.builderAssistantPrefs, {
+    name: "Builder Copilot",
+    favoriteFocuses: ["preview", "clarity"],
+    recentRequests: [],
+    preferredRules: ["Keep preview large", "Keep chat simple"],
+    pinnedGoals: [],
+  }));
   const [showChatDetails, setShowChatDetails] = useState(false);
   const [showStarterExamples, setShowStarterExamples] = useState(false);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
@@ -1918,6 +1968,9 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderProjectMemory, builderProjectMemory), [builderProjectMemory]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.builderAssistantPrefs, builderAssistantPrefs), [builderAssistantPrefs]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.fullStackScope, fullStackScope), [fullStackScope]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.chatReplyPreference, chatReplyPreference), [chatReplyPreference]);
 
   useEffect(() => {
     setBuilderProjectMemory((prev) => ({
@@ -1936,9 +1989,18 @@ export default function App() {
       try {
         const response = await fetch(`${API_BASE}/health`);
         if (!response.ok) throw new Error("health check failed");
+        const data = await response.json();
         setApiStatus("connected");
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          workspace_edit_enabled: Boolean(data?.workspace_edit),
+        }));
       } catch {
         setApiStatus("offline");
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          workspace_edit_enabled: false,
+        }));
       }
     }
     checkHealth();
@@ -2042,10 +2104,15 @@ export default function App() {
     () => getRvAffiliateRecommendations(rvIntelligence, selectedRvTemplateKey),
     [rvIntelligence, selectedRvTemplateKey],
   );
-  const nextBestActions = useMemo(
+  const rawNextBestActions = useMemo(
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
   );
+  const nextBestActions = useMemo(() => {
+    const dismissedActionId = String(builderProjectMemory.dismissed_next_action_id || "").trim();
+    if (!dismissedActionId) return rawNextBestActions;
+    return rawNextBestActions.filter((action) => getActionIdentity(action) !== dismissedActionId);
+  }, [rawNextBestActions, builderProjectMemory.dismissed_next_action_id]);
   const primaryNextAction = nextBestActions[0] || null;
   const secondaryNextActions = nextBestActions.slice(1, 3);
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
@@ -2094,6 +2161,8 @@ export default function App() {
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
+    "Improve this builder UI",
+    "Add backend auth API and frontend login flow",
     "Build a booking app for a small business",
     "Create a client portal with login and invoices",
     "Make a mobile-friendly dashboard for team tasks",
@@ -2104,12 +2173,74 @@ export default function App() {
     () => builderChatQuickIdeas.slice(0, projectId ? 3 : 4),
     [builderChatQuickIdeas, projectId],
   );
+  const fullStackQuickActions = useMemo(() => [
+    { label: "Auth + API", prompt: "add backend auth api and frontend login flow with protected dashboard routes" },
+    { label: "Saved data", prompt: "add backend endpoints and frontend saved data flow for reports and history" },
+    { label: "Billing", prompt: "add frontend pricing page and backend billing endpoints for subscriptions" },
+    { label: "Admin tools", prompt: "add admin dashboard ui and backend management endpoints" },
+  ], []);
   const generalStarterExamples = useMemo(() => [
+    { label: "Improve this builder", prompt: "improve this builder ui and make the preview larger on the side" },
+    { label: "Full-stack app", prompt: "build a full-stack app with frontend dashboard, backend API, login, and saved data" },
     { label: "Client portal", prompt: "build a client portal with login, invoices, messages, and a simple dashboard" },
     { label: "Booking app", prompt: "build a booking app for a local business with calendar, reminders, and admin view" },
     { label: "Team dashboard", prompt: "build a team dashboard with tasks, activity feed, and saved reports" },
     { label: "Content workspace", prompt: "build a content workspace with drafts, approval flow, and publishing calendar" },
   ], []);
+  const builderAssistantQuickActions = useMemo(() => {
+    const actionMap = {
+      preview: { label: "Make preview bigger", prompt: "improve this builder ui and make the preview larger on the side" },
+      clarity: { label: "Simplify builder", prompt: "simplify this builder ui and hide extra details" },
+      chat: { label: "Improve chat flow", prompt: "improve this builder chat flow and make the composer easier to use" },
+      header: { label: "Shrink header", prompt: "shrink the header and give more space to chat and preview" },
+      mobile: { label: "Improve mobile", prompt: "improve this builder mobile layout and keep preview readable" },
+      layout: { label: "Tune layout", prompt: "improve this builder layout and make panels cleaner" },
+    };
+    const orderedKeys = [...new Set([...(builderAssistantPrefs.favoriteFocuses || []), "preview", "clarity", "chat", "layout"])]
+      .filter((key) => actionMap[key]);
+    return orderedKeys.slice(0, 4).map((key) => actionMap[key]);
+  }, [builderAssistantPrefs]);
+
+  function buildScopedChatMessage(message) {
+    const text = String(message || "").trim();
+    if (!text) return text;
+    if (chatAssistantMode === "fullstack") {
+      return `Full-stack request covering frontend and backend: ${text}`;
+    }
+    return text;
+  }
+  const builderAssistantRuleOptions = useMemo(() => [
+    "Keep preview large",
+    "Keep chat simple",
+    "Hide extra details by default",
+    "Prefer mobile-friendly layout",
+  ], []);
+
+  function toggleBuilderAssistantRule(rule) {
+    setBuilderAssistantPrefs((prev) => {
+      const existing = Array.isArray(prev?.preferredRules) ? prev.preferredRules : [];
+      const preferredRules = existing.includes(rule)
+        ? existing.filter((item) => item !== rule)
+        : [...existing, rule];
+      return { ...prev, preferredRules };
+    });
+  }
+
+  function pinBuilderAssistantGoal(goalText) {
+    const goal = String(goalText || builderChatDraft).trim();
+    if (!goal) return;
+    setBuilderAssistantPrefs((prev) => ({
+      ...prev,
+      pinnedGoals: [goal, ...(Array.isArray(prev?.pinnedGoals) ? prev.pinnedGoals : [])].filter((item, index, list) => item && list.indexOf(item) === index).slice(0, 4),
+    }));
+  }
+
+  function removeBuilderAssistantGoal(goalText) {
+    setBuilderAssistantPrefs((prev) => ({
+      ...prev,
+      pinnedGoals: (Array.isArray(prev?.pinnedGoals) ? prev.pinnedGoals : []).filter((item) => item !== goalText),
+    }));
+  }
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -2451,6 +2582,53 @@ export default function App() {
     setChatScrollTick((prev) => prev + 1);
   }
 
+  function dismissPrimaryNextAction() {
+    if (!primaryNextAction) return;
+    const actionId = getActionIdentity(primaryNextAction);
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      dismissed_next_action_id: actionId,
+      dismissed_next_action_label: primaryNextAction.label || "",
+    }));
+    setBuilderInsight(`Hidden suggestion: ${primaryNextAction.label || "Next improvement"}.`);
+    setStatusMessage("Builder hid that suggestion. Another next step will show instead.");
+  }
+
+  function applyPrimaryNextAction(action) {
+    if (!action) return;
+    const actionId = getActionIdentity(action);
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      dismissed_next_action_id: "",
+      accepted_next_action_id: actionId,
+      accepted_next_action_label: action.label || "",
+    }));
+    submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve");
+  }
+
+  function dismissAssistantSuggestedAction(action) {
+    if (!action) return;
+    const actionId = getActionIdentity(action);
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      dismissed_assistant_action_id: actionId,
+      dismissed_assistant_action_label: action.label || "",
+    }));
+    setBuilderInsight(`Hidden chat suggestion: ${action.label || "Next improvement"}.`);
+  }
+
+  function applyAssistantSuggestedAction(action) {
+    if (!action) return;
+    const actionId = getActionIdentity(action);
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      dismissed_assistant_action_id: "",
+      accepted_assistant_action_id: actionId,
+      accepted_assistant_action_label: action.label || "",
+    }));
+    submitBuilderChatMessage(action.prompt, action.mode || "evolve");
+  }
+
   function applyRvSmartTemplate(templateKey, submitNow = false) {
     const template = getRvTemplateByKey(templateKey);
     setSelectedRvTemplateKey(template.key);
@@ -2494,6 +2672,13 @@ export default function App() {
   }
 
   async function requestBuilderChatAgent(message, chatMode) {
+    const recentMessages = builderChatHistory
+      .slice(0, 6)
+      .reverse()
+      .map((item) => ({
+        role: item.role,
+        text: item.text,
+      }));
     const response = await fetch(`${API_BASE}/chat-agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2508,6 +2693,8 @@ export default function App() {
         components: generatedComponents,
         system_planner: systemPlanner,
         chat_mode: chatMode,
+        reply_preference: chatReplyPreference,
+        recent_messages: recentMessages,
       }),
     });
 
@@ -2515,9 +2702,52 @@ export default function App() {
     return response.json();
   }
 
+  async function requestRepoEdit(message, targetScope = fullStackScope) {
+    const response = await fetch(`${API_BASE}/repo-edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: message,
+        current_files: generatedCodeFiles,
+        app_type: featureState.appType,
+        builder_mode: featureState.builderMode,
+        style: simpleDraft.style || "Dark glass",
+        target_scope: targetScope,
+        project_memory: builderProjectMemory,
+        feature_state: featureState,
+        system_planner: systemPlanner,
+      }),
+    });
+
+    if (!response.ok) throw new Error("Repo edit request failed");
+    return response.json();
+  }
+
+  async function requestWorkspaceEdit(message, targetScope = fullStackScope) {
+    const response = await fetch(`${API_BASE}/workspace-edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: message,
+        current_files: generatedCodeFiles,
+        app_type: featureState.appType,
+        builder_mode: featureState.builderMode,
+        style: simpleDraft.style || "Dark glass",
+        target_scope: targetScope,
+        project_memory: builderProjectMemory,
+        feature_state: featureState,
+        system_planner: systemPlanner,
+      }),
+    });
+
+    if (!response.ok) throw new Error("Workspace edit request failed");
+    return response.json();
+  }
+
   async function submitBuilderChatMessage(rawMessage, modeOverride) {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
+    const scopedMessage = buildScopedChatMessage(message);
 
     const resolvedMode = modeOverride || (projectId ? "mutate" : "evolve");
     appendBuilderChatMessage({
@@ -2526,20 +2756,92 @@ export default function App() {
       meta: projectId ? `Project ${projectId}` : "New project idea",
     });
     setBuilderChatDraft("");
-    setPrompt(message);
+    setPrompt(scopedMessage);
     setUiMode("chat");
     setSimpleFlowStep("builder");
 
     try {
       setIsChatSubmitting(true);
-      const agentData = await requestBuilderChatAgent(message, resolvedMode);
+      if (chatAssistantMode === "builder" || isBuilderWorkspaceRequest(message)) {
+        const workspaceSummary = applyBuilderWorkspaceCommand(message);
+        setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
+        appendBuilderChatMessage({
+          role: "assistant",
+          text: workspaceSummary?.notes?.length
+            ? `I updated this builder for you. ${workspaceSummary.notes.join(" ")}`
+            : "I updated this builder workspace for you.",
+          meta: [
+            workspaceSummary?.layout ? `Layout: ${getLayoutLabel(workspaceSummary.layout)}` : null,
+            workspaceSummary?.add?.length ? `Added: ${workspaceSummary.add.join(", ")}` : null,
+            workspaceSummary?.remove?.length ? `Removed: ${workspaceSummary.remove.join(", ")}` : null,
+          ].filter(Boolean).join(" • "),
+        });
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          builder_summary: "This chat can help improve the builder UI as well as generated apps.",
+          last_builder_workspace_request: message,
+        }));
+        setChatAssistantMode("builder");
+        return;
+      }
+
+      if (chatAssistantMode === "fullstack") {
+        const targetScope = fullStackScope || "fullstack";
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          preferred_scope: targetScope === "fullstack" ? "frontend-and-backend" : targetScope,
+          full_stack_preferred: true,
+        }));
+        if (generatedCodeFiles.length) {
+          let repoEditData = null;
+          let workspaceWriteUsed = false;
+          try {
+            const workspaceEditData = await requestWorkspaceEdit(scopedMessage, targetScope);
+            if (workspaceEditData?.ok) {
+              repoEditData = workspaceEditData;
+              workspaceWriteUsed = Boolean(workspaceEditData.workspace_edit_enabled);
+            }
+          } catch {
+            workspaceWriteUsed = false;
+          }
+          if (!repoEditData) {
+            repoEditData = await requestRepoEdit(scopedMessage, targetScope);
+          }
+          applyGeneratedProjectPayload(repoEditData, {
+            prompt: scopedMessage,
+            appType: repoEditData.app_type || featureState.appType,
+            builderMode: repoEditData.builder_mode || featureState.builderMode,
+            routes: repoEditData.routes || generatedRoutes,
+            components: repoEditData.components || generatedComponents,
+          });
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: repoEditData.summary || "I prepared frontend and backend updates for this project.",
+            meta: [
+              repoEditData.changed_file_count ? `${repoEditData.changed_file_count} files updated` : null,
+              workspaceWriteUsed ? `${repoEditData.written_file_count || 0} files written to workspace` : "Bundle update only",
+              `Scope: ${repoEditData.target_scope || targetScope}`,
+              repoEditData.backup_count ? `${repoEditData.backup_count} backups saved` : null,
+            ].filter(Boolean).join(" • "),
+          });
+          setBuilderProjectMemory((prev) => ({
+            ...prev,
+            workspace_edit_enabled: Boolean(repoEditData.workspace_edit_enabled),
+            workspace_last_scope: repoEditData.target_scope || targetScope,
+            workspace_last_backup_manifest: repoEditData.backup_manifest || "",
+          }));
+          return;
+        }
+      }
+
+      const agentData = await requestBuilderChatAgent(scopedMessage, resolvedMode);
       if (agentData?.project_memory) {
         setBuilderProjectMemory(agentData.project_memory);
       }
       const agentMeta = [
-        agentData?.response_type ? `Mode: ${agentData.response_type}` : null,
-        agentData?.memory_summary || null,
-        agentData?.ready_to_apply ? `Ready to apply with ${agentData.apply_mode || resolvedMode}` : "Waiting for your next choice",
+        agentData?.status_summary || null,
+        !agentData?.status_summary ? agentData?.memory_summary || null : null,
+        agentData?.ready_to_apply && !agentData?.status_summary ? `Ready to apply with ${agentData.apply_mode || resolvedMode}` : null,
       ].filter(Boolean).join(". ");
 
       appendBuilderChatMessage({
@@ -2555,17 +2857,23 @@ export default function App() {
       });
 
       if (!agentData?.ready_to_apply) {
-        setBuilderInsight(agentData?.assistant_message || "Builder is waiting for your next instruction.");
+        setBuilderInsight(
+          agentData?.suggested_actions?.[0]?.reason
+          || agentData?.assistant_message
+          || "Builder is waiting for your next instruction."
+        );
         setStatusMessage(
           agentData?.response_type === "clarify"
             ? "Builder needs one or two details before applying changes."
-            : "Builder shared suggestions and is waiting for your next choice."
+            : agentData?.response_type === "answer"
+              ? "Builder answered your question and is ready for the next one."
+              : "Builder shared suggestions and is waiting for your next choice."
         );
         return;
       }
 
       const applyMode = agentData?.apply_mode || resolvedMode;
-      const applyPrompt = String(agentData?.apply_prompt || message).trim();
+      const applyPrompt = String(agentData?.apply_prompt || scopedMessage).trim();
       const summary = applyMode === "mutate"
         ? await handleGeneratedAppMutation(applyPrompt)
         : await runBuilderBrain(applyPrompt);
@@ -3371,8 +3679,12 @@ export default function App() {
   }
 
   function handleMutationCommand(rawCommand) {
+    applyBuilderWorkspaceCommand(rawCommand);
+  }
+
+  function applyBuilderWorkspaceCommand(rawCommand) {
     const command = String(rawCommand || prompt).trim();
-    if (!command) return;
+    if (!command) return null;
 
     const { add, remove } = extractModuleMutations(command);
     const layoutMutation = applyLayoutCommand(command, layoutState, activeModules);
@@ -3419,6 +3731,13 @@ export default function App() {
         : "Command logged. No major layout mutation matched yet."
     );
     setStatusMessage("Command mutation applied.");
+    return {
+      command,
+      add,
+      remove,
+      layout: layoutMutation.layout,
+      notes: layoutMutation.notes,
+    };
   }
 
   async function runBatteryPlan() {
@@ -3632,6 +3951,11 @@ export default function App() {
           gap: 16px;
           margin-bottom: 18px;
         }
+        .topbar.compact {
+          gap: 12px;
+          margin-bottom: 12px;
+          padding-bottom: 4px;
+        }
         .brand {
           display: flex;
           flex-direction: column;
@@ -3647,6 +3971,14 @@ export default function App() {
         .brand h1 { font-size: 30px; }
         .brand p { color: var(--muted); }
         .topbar-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+        .topbar.compact .brand { gap: 2px; }
+        .topbar.compact .eyebrow { font-size: 10px; letter-spacing: 0.1em; }
+        .topbar.compact .brand h1 { font-size: 20px; }
+        .topbar.compact .brand p { display: none; }
+        .topbar.compact .topbar-actions { gap: 8px; align-items: center; }
+        .topbar.compact .badge { padding: 6px 10px; font-size: 11px; }
+        .topbar.compact .pill,
+        .topbar.compact .ghost-pill { padding: 8px 12px; }
         .pill, .ghost-pill, .tab-btn, .sidebar-btn, .mini-btn {
           border: 1px solid rgba(148, 163, 184, 0.2);
           background: rgba(255,255,255,0.04);
@@ -4020,6 +4352,10 @@ export default function App() {
           background: linear-gradient(160deg, rgba(102,217,239,.14), rgba(15,23,42,.82) 56%, rgba(255,255,255,.03));
           box-shadow: 0 20px 50px rgba(2,6,23,.22);
         }
+        .chat-composer-shell.builder-ai {
+          border-color: rgba(16,185,129,.28);
+          background: linear-gradient(160deg, rgba(16,185,129,.18), rgba(15,23,42,.86) 56%, rgba(255,255,255,.03));
+        }
         .chat-composer-header { display: grid; gap: 8px; }
         .chat-composer-header h3 { margin: 0; font-size: 24px; line-height: 1.15; }
         .chat-composer-header p { margin: 0; color: var(--muted); max-width: 64ch; }
@@ -4056,6 +4392,11 @@ export default function App() {
           border: 1px solid rgba(148,163,184,.16);
           color: var(--muted);
         }
+        .chat-project-state.builder-ai {
+          background: rgba(16,185,129,.12);
+          border-color: rgba(16,185,129,.28);
+          color: #d1fae5;
+        }
         .chat-guidance-strip {
           display: grid;
           gap: 10px;
@@ -4079,9 +4420,20 @@ export default function App() {
         .chat-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
         .chat-chip { border: 1px solid rgba(148,163,184,.16); background: rgba(255,255,255,.04); color: var(--text); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
         .chat-chip.active { background: rgba(102,217,239,.14); border-color: rgba(102,217,239,.35); }
+        .chat-chip.builder-ai-active { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.35); }
+        .chat-chip.builder-pref-active { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.3); }
         .chat-chip-row.compact { gap: 8px; }
         .chat-quick-ideas { display: grid; gap: 8px; }
         .chat-quick-ideas .muted { font-size: 13px; }
+        .chat-builder-memory {
+          display: grid;
+          gap: 10px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          border: 1px solid rgba(16,185,129,.2);
+          background: rgba(16,185,129,.08);
+        }
+        .chat-builder-memory strong { font-size: 13px; }
         .chat-composer-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
         .chat-secondary-link {
           border: 0;
@@ -4106,16 +4458,31 @@ export default function App() {
         .chat-empty-state { border: 1px dashed rgba(148,163,184,.18); border-radius: 18px; padding: 18px; color: var(--muted); }
         .chat-project-pill { display: inline-flex; align-items: center; gap: 8px; }
         .chat-guidance-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-        .chat-status-card { display: grid; gap: 10px; }
-        .chat-primary-next {
+        .chat-status-card {
           display: grid;
-          gap: 14px;
-          padding: 18px;
-          border-radius: 20px;
-          border: 1px solid rgba(102,217,239,.18);
-          background: linear-gradient(180deg, rgba(102,217,239,.12), rgba(255,255,255,.03));
+          gap: 10px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          border: 1px solid rgba(148,163,184,.14);
+          background: rgba(255,255,255,.03);
         }
-        .chat-primary-next strong { font-size: 18px; }
+        .chat-status-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .chat-status-copy { display: grid; gap: 6px; }
+        .chat-status-copy strong { font-size: 15px; }
+        .chat-primary-next {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+        }
+        .chat-primary-next strong { font-size: 15px; }
         .chat-next-actions { display: flex; flex-wrap: wrap; gap: 10px; }
         @media (max-width: 1120px) {
           .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
@@ -4124,10 +4491,10 @@ export default function App() {
         }
       `}</style>
 
-      <div className="topbar">
+      <div className={`topbar ${uiMode === "chat" ? "compact" : ""}`}>
         <div className="brand">
           <span className="eyebrow">Personal AI Builder</span>
-          <h1>Real Builder Workspace</h1>
+          <h1>{uiMode === "chat" ? "Build with Chat" : "Real Builder Workspace"}</h1>
           <p>Describe your app, then keep improving it with simple follow-up requests.</p>
         </div>
         <div className="topbar-actions">
@@ -4139,11 +4506,13 @@ export default function App() {
           <span className={`badge ${apiStatus === "connected" ? "ok" : apiStatus === "offline" ? "off" : "warn"}`}>
             API: {apiStatus}
           </span>
-          <span className="badge">Layout: {getLayoutLabel(layoutState)}</span>
-          <span className="badge">Modules: {activeModules.length}</span>
-          <button className="pill primary" onClick={() => runBuilderBrain()}>
-            Build App
-          </button>
+          {uiMode !== "chat" ? <span className="badge">Layout: {getLayoutLabel(layoutState)}</span> : null}
+          {uiMode !== "chat" ? <span className="badge">Modules: {activeModules.length}</span> : null}
+          {uiMode !== "chat" ? (
+            <button className="pill primary" onClick={() => runBuilderBrain()}>
+              Build App
+            </button>
+          ) : null}
           <button className="ghost-pill" onClick={resetBuilder}>
             New App
           </button>
@@ -5390,7 +5759,7 @@ export default function App() {
           <div className="chat-side-stack">
             <Panel
               title="Build With Chat"
-              subtitle="Type what you want, press Go, and keep improving the same project from the same chat."
+              subtitle="Type what you want, press Go, and use the same chat to build apps, change frontend and backend together, or improve this builder itself."
               actions={
                 <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
                   {showChatDetails ? "Hide project details" : "Project details"}
@@ -5398,38 +5767,202 @@ export default function App() {
               }
             >
               <div className="chat-composer">
-                <div className="chat-composer-shell">
+                <div className={`chat-composer-shell ${chatAssistantMode === "builder" ? "builder-ai" : ""}`}>
                   <div className="chat-composer-header">
                     <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
                     <p>{projectId ? "Keep the same project moving with one clear request at a time, then press Go." : "Start with one plain-language sentence, then press Go. The builder will ask follow-up questions if anything is missing."}</p>
                   </div>
                   <div className="chat-mode-row">
-                    <span className="chat-project-state">{projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version."}</span>
+                    <span className={`chat-project-state ${chatAssistantMode === "builder" ? "builder-ai" : ""}`}>
+                      {chatAssistantMode === "builder"
+                        ? "Builder AI is active. Go improves this builder."
+                        : chatAssistantMode === "fullstack"
+                          ? "Full-stack AI is active. Go targets frontend and backend together."
+                          : (projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version."))}
+                    </span>
+                    <div className="chat-chip-row compact">
+                      <button
+                        className={`chat-chip ${chatAssistantMode === "app" ? "active" : ""}`}
+                        type="button"
+                        onClick={() => setChatAssistantMode("app")}
+                      >
+                        App AI
+                      </button>
+                      <button
+                        className={`chat-chip ${chatAssistantMode === "fullstack" ? "active" : ""}`}
+                        type="button"
+                        onClick={() => {
+                          setChatAssistantMode("fullstack");
+                          if (!builderChatDraft.trim()) {
+                            setBuilderChatDraft("add frontend dashboard and backend api with login and saved data");
+                          }
+                        }}
+                      >
+                        Full-stack AI
+                      </button>
+                      <button
+                        className={`chat-chip ${chatAssistantMode === "builder" ? "builder-ai-active" : ""}`}
+                        type="button"
+                        onClick={() => {
+                          setChatAssistantMode("builder");
+                          if (!builderChatDraft.trim()) {
+                            setBuilderChatDraft("improve this builder ui");
+                          }
+                        }}
+                      >
+                        Builder AI
+                      </button>
+                    </div>
                   </div>
                   <div className="chat-guidance-strip">
                     <div className="chat-guidance-tile">
                       <strong>Current focus</strong>
-                      <div>{builderProjectMemory.app_type || featureState.appType}</div>
+                      <div>{chatAssistantMode === "builder" ? "This builder" : chatAssistantMode === "fullstack" ? "Frontend + backend" : (builderProjectMemory.app_type || featureState.appType)}</div>
                     </div>
                     <div className="chat-guidance-tile">
                       <strong>Best prompt</strong>
-                      <div>{projectId ? "Ask for one useful change." : "Say what you want to build in one sentence."}</div>
+                      <div>
+                        {chatAssistantMode === "builder"
+                          ? "Describe one change you want in this builder UI or workflow."
+                          : chatAssistantMode === "fullstack"
+                            ? "Ask for both frontend and backend changes in the same request."
+                            : (projectId ? "Ask for one useful change, including frontend and backend together if you want." : "Say what you want to build, including frontend and backend if needed.")}
+                      </div>
                     </div>
+                    {chatAssistantMode === "fullstack" ? (
+                      <div className="chat-guidance-tile">
+                        <strong>Workspace writes</strong>
+                        <div>{builderProjectMemory.workspace_edit_enabled ? "Enabled on backend" : "Not enabled, bundle-only fallback"}</div>
+                      </div>
+                    ) : null}
                   </div>
+                  {chatAssistantMode === "fullstack" ? (
+                    <div className="chat-builder-memory">
+                      <div>
+                        <strong>Apply scope</strong>
+                        <div className="muted">Choose whether Go should target only the frontend, only the backend, or both.</div>
+                      </div>
+                      <div className="chat-chip-row compact">
+                        {[
+                          ["frontend", "Frontend only"],
+                          ["backend", "Backend only"],
+                          ["fullstack", "Frontend + backend"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            className={`chat-chip ${fullStackScope === value ? "active" : ""}`}
+                            type="button"
+                            onClick={() => setFullStackScope(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {builderProjectMemory.workspace_last_backup_manifest ? (
+                        <div className="muted">Last backup manifest: {builderProjectMemory.workspace_last_backup_manifest}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <textarea
                     className="input"
                     value={builderChatDraft}
                     onChange={(e) => setBuilderChatDraft(e.target.value)}
-                    placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build a client portal with login, saved reports, and a dashboard"}
+                    placeholder={chatAssistantMode === "builder"
+                      ? "Example: make the preview larger, simplify the chat, and hide extra details"
+                      : chatAssistantMode === "fullstack"
+                        ? "Example: add frontend dashboard cards and backend endpoints for saved reports"
+                        : (projectId ? "Example: add saved reports and a backend endpoint, or improve this builder UI" : "Example: build a client portal with frontend dashboard and backend API")}
                   />
+                  {chatAssistantMode === "builder" ? (
+                    <div className="chat-builder-memory">
+                      <div>
+                        <strong>{builderAssistantPrefs.name || "Builder Copilot"}</strong>
+                        <div className="muted">Saved focus: {(builderAssistantPrefs.favoriteFocuses || []).length ? builderAssistantPrefs.favoriteFocuses.join(", ") : "none yet"}</div>
+                      </div>
+                      <div>
+                        <div className="muted" style={{ marginBottom: 8 }}>Preferences</div>
+                        <div className="chat-chip-row compact">
+                          {builderAssistantRuleOptions.map((rule) => (
+                            <button
+                              key={rule}
+                              className={`chat-chip ${(builderAssistantPrefs.preferredRules || []).includes(rule) ? "builder-pref-active" : ""}`}
+                              type="button"
+                              onClick={() => toggleBuilderAssistantRule(rule)}
+                            >
+                              {rule}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="muted" style={{ marginBottom: 8 }}>Pinned goals</div>
+                        <div className="chat-chip-row compact">
+                          {(builderAssistantPrefs.pinnedGoals || []).map((goal) => (
+                            <button key={goal} className="chat-chip builder-pref-active" type="button" onClick={() => setBuilderChatDraft(goal)}>
+                              {goal}
+                            </button>
+                          ))}
+                          <button className="chat-chip" type="button" onClick={() => pinBuilderAssistantGoal()}>
+                            Pin current goal
+                          </button>
+                        </div>
+                        {(builderAssistantPrefs.pinnedGoals || []).length ? (
+                          <div className="chat-chip-row compact" style={{ marginTop: 8 }}>
+                            {(builderAssistantPrefs.pinnedGoals || []).slice(0, 2).map((goal) => (
+                              <button key={`remove_${goal}`} className="chat-secondary-link" type="button" onClick={() => removeBuilderAssistantGoal(goal)}>
+                                Remove: {goal}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      {(builderAssistantPrefs.recentRequests || []).length ? (
+                        <div className="chat-chip-row compact">
+                          {builderAssistantPrefs.recentRequests.slice(0, 2).map((item) => (
+                            <button key={item} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(item)}>{item}</button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="chat-quick-ideas">
-                    <div className="muted">Quick starts</div>
+                    <div className="muted">{chatAssistantMode === "builder" ? "Builder actions" : chatAssistantMode === "fullstack" ? "Full-stack actions" : "Quick starts"}</div>
                     <div className="chat-chip-row compact">
-                      {visibleChatQuickIdeas.map((idea) => (
-                        <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
-                      ))}
+                      {chatAssistantMode === "builder"
+                        ? builderAssistantQuickActions.map((idea) => (
+                          <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                        ))
+                        : chatAssistantMode === "fullstack"
+                          ? fullStackQuickActions.map((idea) => (
+                            <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                          ))
+                          : visibleChatQuickIdeas.map((idea) => (
+                            <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
+                          ))}
                     </div>
                   </div>
+                  {chatAssistantMode !== "builder" ? (
+                    <div className="chat-quick-ideas">
+                      <div className="muted">Conversation style</div>
+                      <div className="chat-chip-row compact">
+                        {[
+                          ["balanced", "Balanced"],
+                          ["answer", "Answer only"],
+                          ["clarify", "Ask questions"],
+                          ["apply", "Apply now"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
+                            type="button"
+                            onClick={() => setChatReplyPreference(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="chat-composer-actions">
                     <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
                       {isChatSubmitting ? "Working..." : "Go"}
@@ -5497,19 +6030,19 @@ export default function App() {
                       <div className="chat-advice-stack">
                         {Array.isArray(message.advice.upgrades) ? message.advice.upgrades.map((item) => (
                           <div key={`upgrade_${item.label}`} className="chat-advice-card">
-                            <strong>Upgrade: {item.label}</strong>
+                            <strong>Good next step: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
                         {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
                           <div key={`caution_${item.label}`} className="chat-advice-card">
-                            <strong>Caution: {item.label}</strong>
+                            <strong>Watch out: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
                         {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
                           <div key={`better_${item.label}`} className="chat-advice-card">
-                            <strong>Better option: {item.label}</strong>
+                            <strong>Simpler option: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
@@ -5525,7 +6058,7 @@ export default function App() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            <strong>Research: {item.title}</strong>
+                            <strong>Helpful source: {item.title}</strong>
                             <div className="muted">{item.snippet || "Source found for this topic."}</div>
                           </a>
                         ))}
@@ -5534,7 +6067,7 @@ export default function App() {
                     {message.role === "assistant" && message.researchRecommendation?.prompt ? (
                       <div className="chat-advice-stack">
                         <div className="chat-advice-card">
-                          <strong>Why this recommendation: {message.researchRecommendation.label || "Recommended next move"}</strong>
+                          <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
                           <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
                         </div>
                       </div>
@@ -5549,26 +6082,55 @@ export default function App() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            <strong>Learned knowledge: {item.title}</strong>
+                            <strong>Saved note: {item.title}</strong>
                             <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
                           </a>
                         ))}
                       </div>
                     ) : null}
-                    {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (
-                      <div className="chat-action-row">
-                        {message.actions.map((action) => (
-                          <button
-                            key={`${message.id}_${action.label}_${action.prompt}`}
-                            className="chat-chip"
-                            type="button"
-                            onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
-                          >
-                            {action.label}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+                    {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
+                      const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
+                      const visibleActions = message.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
+                      if (!visibleActions.length) return null;
+                      const leadAction = visibleActions[0];
+                      const extraActions = visibleActions.slice(1);
+                      return (
+                        <div className="chat-action-row">
+                          {leadAction?.reason ? (
+                            <div className="chat-advice-card" style={{ width: "100%" }}>
+                              <strong>{leadAction.label}</strong>
+                              <div className="muted">{leadAction.reason}</div>
+                              <div className="chat-action-row" style={{ marginTop: 10 }}>
+                                <button
+                                  className="pill primary"
+                                  type="button"
+                                  onClick={() => applyAssistantSuggestedAction(leadAction)}
+                                >
+                                  Do this next
+                                </button>
+                                <button
+                                  className="chat-secondary-link"
+                                  type="button"
+                                  onClick={() => dismissAssistantSuggestedAction(leadAction)}
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {extraActions.map((action) => (
+                            <button
+                              key={`${message.id}_${action.label}_${action.prompt}`}
+                              className="chat-chip"
+                              type="button"
+                              onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })() : null}
                   </div>
                 )) : (
                   <div className="chat-empty-state">
@@ -5578,23 +6140,33 @@ export default function App() {
               </div>
             </Panel>
 
-            <Panel title="Builder update" subtitle="The current status and the best next move.">
-              <div className="chat-status-card">
-                <div className="chat-empty-state">{simpleStatusMessage}</div>
-                <div className="muted">{simpleBuilderInsight}</div>
+            <div className="chat-status-card">
+              <div className="chat-status-head">
+                <div className="chat-status-copy">
+                  <strong>Builder update</strong>
+                  <div>{simpleStatusMessage}</div>
+                  <div className="muted">{simpleBuilderInsight}</div>
+                </div>
                 {primaryNextAction ? (
                   <div className="chat-primary-next">
                     <div>
                       <strong>{primaryNextAction.label}</strong>
-                      <div className="muted" style={{ marginTop: 6 }}>{primaryNextAction.reason}</div>
+                      <div className="muted" style={{ marginTop: 4 }}>{primaryNextAction.reason}</div>
                     </div>
                     <div className="chat-next-actions">
                       <button
                         className="pill primary"
                         type="button"
-                        onClick={() => submitBuilderChatMessage(primaryNextAction.cmd, primaryNextAction.cmd === "run-planner" ? "mutate" : "evolve")}
+                        onClick={() => applyPrimaryNextAction(primaryNextAction)}
                       >
                         Do this next
+                      </button>
+                      <button
+                        className="chat-secondary-link"
+                        type="button"
+                        onClick={() => dismissPrimaryNextAction()}
+                      >
+                        Dismiss
                       </button>
                       {secondaryNextActions.map((action) => (
                         <button
@@ -5610,7 +6182,7 @@ export default function App() {
                   </div>
                 ) : null}
               </div>
-            </Panel>
+            </div>
 
             {showChatDetails ? <Panel title="Project details" subtitle="Technical project info and saved builder memory.">
               <div className="chat-side-stack">
@@ -5640,7 +6212,7 @@ export default function App() {
                   </div>
                 </Panel>
 
-                <Panel title="What I remember" subtitle="Saved project details and decisions.">
+                <Panel title="Saved context" subtitle="The key details the builder is carrying forward.">
                   <div className="card-grid">
                     <div className="card">
                       <strong>Summary</strong>
@@ -5659,17 +6231,10 @@ export default function App() {
                       <div className="muted">{builderProjectMemory.has_generated_app ? "Generated app in progress" : "Planning stage"}</div>
                     </div>
                     <div className="card">
-                      <strong>Global knowledge</strong>
-                      <div className="muted">{builderProjectMemory.global_knowledge_count || 0} learned items</div>
+                      <strong>Learned items</strong>
+                      <div className="muted">{builderProjectMemory.global_knowledge_count || 0} saved insights</div>
                     </div>
                   </div>
-                  {globalKnowledgeTopics.length ? (
-                    <div className="zone-chip-row" style={{ marginTop: 12 }}>
-                      {globalKnowledgeTopics.map((topic) => (
-                        <span key={topic} className="zone-chip">Knowledge topic · {topic}</span>
-                      ))}
-                    </div>
-                  ) : null}
                   <div className="zone-chip-row" style={{ marginTop: 14 }}>
                     {Array.isArray(builderProjectMemory.systems) && builderProjectMemory.systems.length
                       ? builderProjectMemory.systems.map((system) => (
@@ -5692,7 +6257,7 @@ export default function App() {
                   ) : null}
                   {Array.isArray(builderProjectMemory.unresolved_questions) && builderProjectMemory.unresolved_questions.length ? (
                     <div className="module-list" style={{ marginTop: 12 }}>
-                      {builderProjectMemory.unresolved_questions.map((question) => (
+                      {builderProjectMemory.unresolved_questions.slice(0, 2).map((question) => (
                         <div key={question} className="module-item">
                           <strong>Waiting on</strong>
                           <div className="muted">{question}</div>
@@ -5702,46 +6267,30 @@ export default function App() {
                   ) : null}
                   {builderProjectMemory.advice ? (
                     <div className="module-list" style={{ marginTop: 12 }}>
-                      {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.map((item) => (
+                      {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.slice(0, 1).map((item) => (
                         <div key={`memory_upgrade_${item.label}`} className="module-item">
-                          <strong>Upgrade: {item.label}</strong>
+                          <strong>Good next step: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
-                      {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.map((item) => (
+                      {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.slice(0, 1).map((item) => (
                         <div key={`memory_caution_${item.label}`} className="module-item">
-                          <strong>Caution: {item.label}</strong>
+                          <strong>Watch out: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
-                      {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.map((item) => (
+                      {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.slice(0, 1).map((item) => (
                         <div key={`memory_better_${item.label}`} className="module-item">
-                          <strong>Better option: {item.label}</strong>
+                          <strong>Simpler option: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
-                    </div>
-                  ) : null}
-                  {Array.isArray(builderProjectMemory.latest_research?.findings) && builderProjectMemory.latest_research.findings.length ? (
-                    <div className="module-list" style={{ marginTop: 12 }}>
-                      {builderProjectMemory.latest_research.findings.slice(0, 4).map((item) => (
-                        <a
-                          key={`memory_research_${item.url || item.title}`}
-                          className="module-item"
-                          href={item.url || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <strong>Research: {item.title}</strong>
-                          <div className="muted">{item.snippet || "Source found for this topic."}</div>
-                        </a>
-                      ))}
                     </div>
                   ) : null}
                   {builderProjectMemory.research_recommendation?.prompt ? (
                     <div className="module-list" style={{ marginTop: 12 }}>
                       <div className="module-item">
-                        <strong>Research recommendation: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>
+                        <strong>Recommended next move: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>
                         <div className="muted">{builderProjectMemory.research_recommendation.reason || "Ready to apply from saved research."}</div>
                         <div className="muted" style={{ marginTop: 8 }}>{builderProjectMemory.research_recommendation.explanation || "The builder chose this because it best fits the saved research and current project state."}</div>
                         <button
@@ -5755,56 +6304,16 @@ export default function App() {
                       </div>
                     </div>
                   ) : null}
-                  {Array.isArray(builderProjectMemory.knowledge_items) && builderProjectMemory.knowledge_items.length ? (
-                    <div className="module-list" style={{ marginTop: 12 }}>
-                      {builderProjectMemory.knowledge_items.slice(0, 6).map((item) => (
-                        <a
-                          key={`knowledge_bank_${item.url || item.title}`}
-                          className="module-item"
-                          href={item.url || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <strong>Knowledge: {item.title}</strong>
-                          <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
                   {isKnowledgeLoading ? (
                     <div className="chat-empty-state" style={{ marginTop: 12 }}>Refreshing learned knowledge…</div>
                   ) : null}
-                  {globalKnowledgeItems.length ? (
-                    <div className="module-list" style={{ marginTop: 12 }}>
-                      {globalKnowledgeItems.map((item) => (
-                        <a
-                          key={`global_knowledge_${item.url || item.title}`}
-                          className="module-item"
-                          href={item.url || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <strong>Global: {item.title}</strong>
-                          <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
-                          <div className="muted" style={{ marginTop: 6 }}>
-                            Score {Math.round(item.score || 0)} · Used {item.use_count || 0} times · Sources {item.source_count || 1}
-                          </div>
-                        </a>
+                  {globalKnowledgeTopics.length ? (
+                    <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                      {globalKnowledgeTopics.slice(0, 4).map((topic) => (
+                        <span key={topic} className="zone-chip">Knowledge · {topic}</span>
                       ))}
                     </div>
                   ) : null}
-                </Panel>
-
-                <Panel title="Detailed status" subtitle="The full builder response and all available follow-up actions.">
-                  <div className="muted" style={{ marginBottom: 10 }}>{simpleStatusMessage}</div>
-                  <div className="chat-empty-state" style={{ marginBottom: 12 }}>{simpleBuilderInsight}</div>
-                  <div className="chat-chip-row">
-                    {nextBestActions.map((action) => (
-                      <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
                 </Panel>
               </div>
             </Panel> : null}
