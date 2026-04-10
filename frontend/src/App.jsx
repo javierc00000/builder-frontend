@@ -2113,8 +2113,9 @@ export default function App() {
     if (!dismissedActionId) return rawNextBestActions;
     return rawNextBestActions.filter((action) => getActionIdentity(action) !== dismissedActionId);
   }, [rawNextBestActions, builderProjectMemory.dismissed_next_action_id]);
-  const primaryNextAction = nextBestActions[0] || null;
-  const secondaryNextActions = nextBestActions.slice(1, 3);
+  const showLocalNextActions = uiMode !== "chat" || Boolean(projectId || generatedCodeFiles.length || generatedRoutes.length || generatedComponents.length);
+  const primaryNextAction = showLocalNextActions ? nextBestActions[0] || null : null;
+  const secondaryNextActions = showLocalNextActions ? nextBestActions.slice(1, 3) : [];
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
