@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   orchestrationHistory: "builder_orchestration_history_v1",
   builderChatHistory: "builder_chat_history_v1",
   builderChatDraft: "builder_chat_draft_v1",
+  builderProjectMemory: "builder_project_memory_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
 };
@@ -1552,9 +1553,9 @@ function inferPreviewRoutes(routes = [], files = [], appType = "") {
   return [{
     path:
       appType === "admin panel" ? "/dashboard"
-      : appType === "assistant app" ? "/assistant"
-      : appType === "content app" ? "/studio"
-      : "/tool",
+        : appType === "assistant app" ? "/assistant"
+          : appType === "content app" ? "/studio"
+            : "/tool",
     component: "App",
     reason: "Default preview route",
   }];
@@ -1687,8 +1688,8 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
     layout.mode === "dashboard"
       ? "Builder Dashboard"
       : layout.mode === "focus"
-      ? "Focused Canvas"
-      : "Workspace Preview";
+        ? "Focused Canvas"
+        : "Workspace Preview";
 
   if (layout.previewStyle === "dashboard") {
     return (
@@ -1866,6 +1867,10 @@ export default function App() {
   const [orchestrationHistory, setOrchestrationHistory] = useState(() => loadFromStorage(STORAGE_KEYS.orchestrationHistory, []));
   const [builderChatHistory, setBuilderChatHistory] = useState(() => loadFromStorage(STORAGE_KEYS.builderChatHistory, []));
   const [builderChatDraft, setBuilderChatDraft] = useState(() => loadFromStorage(STORAGE_KEYS.builderChatDraft, ""));
+  const [builderProjectMemory, setBuilderProjectMemory] = useState(() => loadFromStorage(STORAGE_KEYS.builderProjectMemory, {}));
+  const [globalKnowledgeItems, setGlobalKnowledgeItems] = useState([]);
+  const [globalKnowledgeTopics, setGlobalKnowledgeTopics] = useState([]);
+  const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [chatScrollTick, setChatScrollTick] = useState(0);
   const [chatComposerMode, setChatComposerMode] = useState("evolve");
@@ -1891,6 +1896,19 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatDraft, builderChatDraft), [builderChatDraft]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.builderProjectMemory, builderProjectMemory), [builderProjectMemory]);
+
+  useEffect(() => {
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      project_id: projectId || prev.project_id || "",
+      project_summary: prompt || prev.project_summary || "",
+      app_type: featureState.appType,
+      builder_mode: featureState.builderMode,
+      systems: systemPlanner.systems || prev.systems || [],
+      has_generated_app: Boolean(generatedCodeFiles.length || generatedRoutes.length || generatedComponents.length || projectId),
+    }));
+  }, [projectId, prompt, featureState.appType, featureState.builderMode, systemPlanner.systems, generatedCodeFiles.length, generatedRoutes.length, generatedComponents.length]);
 
   useEffect(() => {
     async function checkHealth() {
@@ -1904,6 +1922,33 @@ export default function App() {
     }
     checkHealth();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function syncGlobalKnowledge() {
+      setIsKnowledgeLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/knowledge-store?limit=8`);
+        if (!response.ok) throw new Error("knowledge store request failed");
+        const data = await response.json();
+        if (!active) return;
+        setGlobalKnowledgeItems(Array.isArray(data?.items) ? data.items : []);
+        setGlobalKnowledgeTopics(Array.isArray(data?.top_topics) ? data.top_topics : []);
+      } catch {
+        if (!active) return;
+        setGlobalKnowledgeItems([]);
+        setGlobalKnowledgeTopics([]);
+      } finally {
+        if (active) setIsKnowledgeLoading(false);
+      }
+    }
+
+    syncGlobalKnowledge();
+    return () => {
+      active = false;
+    };
+  }, [builderProjectMemory.global_knowledge_count]);
 
   useEffect(() => {
     if (simpleFlowStep !== "generating" || !simplePendingPrompt) return undefined;
@@ -2079,10 +2124,10 @@ export default function App() {
 
     const authPills = previewAuthState.enabled
       ? [
-          `<div class="runner-auth-pill ${previewAuthMode === "member" ? "active" : ""}">Member preview</div>`,
-          previewAuthState.hasAdmin ? `<div class="runner-auth-pill ${previewAuthMode === "admin" ? "active" : ""}">Admin preview</div>` : "",
-          `<div class="runner-auth-pill ${previewAuthMode === "guest" ? "active" : ""}">Signed-out preview</div>`,
-        ].join("")
+        `<div class="runner-auth-pill ${previewAuthMode === "member" ? "active" : ""}">Member preview</div>`,
+        previewAuthState.hasAdmin ? `<div class="runner-auth-pill ${previewAuthMode === "admin" ? "active" : ""}">Admin preview</div>` : "",
+        `<div class="runner-auth-pill ${previewAuthMode === "guest" ? "active" : ""}">Signed-out preview</div>`,
+      ].join("")
       : `<div class="runner-auth-pill active">Guest preview</div>`;
 
     const pageSummary = escapePreviewHtml(buildPreviewPageSummary(currentRoute, previewAuthState, featureState, prompt));
@@ -2413,6 +2458,28 @@ export default function App() {
     }
   }
 
+  async function requestBuilderChatAgent(message, chatMode) {
+    const response = await fetch(`${API_BASE}/chat-agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        project_id: projectId,
+        current_prompt: prompt,
+        project_memory: builderProjectMemory,
+        feature_state: featureState,
+        generated_files: generatedCodeFiles,
+        routes: generatedRoutes,
+        components: generatedComponents,
+        system_planner: systemPlanner,
+        chat_mode: chatMode,
+      }),
+    });
+
+    if (!response.ok) throw new Error("Chat agent request failed");
+    return response.json();
+  }
+
   async function submitBuilderChatMessage(rawMessage, modeOverride) {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
@@ -2430,9 +2497,43 @@ export default function App() {
 
     try {
       setIsChatSubmitting(true);
-      const summary = resolvedMode === "mutate"
-        ? await handleGeneratedAppMutation(message)
-        : await runBuilderBrain(message);
+      const agentData = await requestBuilderChatAgent(message, resolvedMode);
+      if (agentData?.project_memory) {
+        setBuilderProjectMemory(agentData.project_memory);
+      }
+      const agentMeta = [
+        agentData?.response_type ? `Mode: ${agentData.response_type}` : null,
+        agentData?.memory_summary || null,
+        agentData?.ready_to_apply ? `Ready to apply with ${agentData.apply_mode || resolvedMode}` : "Waiting for your next choice",
+      ].filter(Boolean).join(". ");
+
+      appendBuilderChatMessage({
+        role: "assistant",
+        text: agentData?.assistant_message || "I reviewed that request.",
+        meta: agentMeta,
+        questions: Array.isArray(agentData?.questions) ? agentData.questions : [],
+        actions: Array.isArray(agentData?.suggested_actions) ? agentData.suggested_actions : [],
+        advice: agentData?.advice || null,
+        researchFindings: Array.isArray(agentData?.research_findings) ? agentData.research_findings : [],
+        knowledgeHits: Array.isArray(agentData?.knowledge_hits) ? agentData.knowledge_hits : [],
+        researchRecommendation: agentData?.research_recommendation || null,
+      });
+
+      if (!agentData?.ready_to_apply) {
+        setBuilderInsight(agentData?.assistant_message || "Builder is waiting for your next instruction.");
+        setStatusMessage(
+          agentData?.response_type === "clarify"
+            ? "Builder needs one or two details before applying changes."
+            : "Builder shared suggestions and is waiting for your next choice."
+        );
+        return;
+      }
+
+      const applyMode = agentData?.apply_mode || resolvedMode;
+      const applyPrompt = String(agentData?.apply_prompt || message).trim();
+      const summary = applyMode === "mutate"
+        ? await handleGeneratedAppMutation(applyPrompt)
+        : await runBuilderBrain(applyPrompt);
 
       const systemLine = (summary?.systems || systemPlanner.systems || []).slice(0, 4).map((key) => formatSystemLabel(key)).join(", ");
       const fileCount = summary?.generatedFileCount ?? generatedCodeFiles.length;
@@ -2552,6 +2653,9 @@ export default function App() {
     setGeneratedCodeFiles(files);
     setSelectedGeneratedFilePath(files[0]?.path || "");
     setGeneratedAppMonetization(payload?.monetization || null);
+    if (payload?.project_memory) {
+      setBuilderProjectMemory(payload.project_memory);
+    }
     return { files, nextRoutes, nextComponents, nextFileTree };
   }
 
@@ -2567,6 +2671,7 @@ export default function App() {
       current_files: options.currentFiles || generatedCodeFiles,
       system_planner: systemPlanner,
       system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
+      project_memory: builderProjectMemory,
       feature_state: featureState,
       current_layout: layoutState,
       active_modules: activeModules,
@@ -2746,65 +2851,65 @@ export default function App() {
   }
 
 
-async function downloadDeploymentBundle(target) {
-  if (!generatedCodeFiles.length) {
-    setStatusMessage("Generate code first so the deployment export can be created.");
-    return;
+  async function downloadDeploymentBundle(target) {
+    if (!generatedCodeFiles.length) {
+      setStatusMessage("Generate code first so the deployment export can be created.");
+      return;
+    }
+
+    const exportTarget = target === "vercel" ? "vercel" : "render";
+    const context = {
+      prompt,
+      appType: featureState.appType,
+      builderMode: featureState.builderMode,
+      routes: generatedRoutes,
+      components: generatedComponents,
+      folderName: sanitizeProjectName(prompt || featureState.quickIdea || "builder-project"),
+    };
+
+    try {
+      setDeployExportTarget(exportTarget);
+      setStatusMessage(`Preparing ${exportTarget} export...`);
+
+      const bundle = buildDeployExportFiles(exportTarget, generatedCodeFiles, context);
+      const zip = new JSZip();
+      const root = zip.folder(`${bundle.folderName}-${exportTarget}`);
+
+      bundle.files.forEach((file) => {
+        root.file(file.path, file.content || "");
+      });
+
+      root.file(
+        ".builder-deploy-meta.json",
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            target: exportTarget,
+            prompt,
+            projectId: projectId || "",
+            appType: featureState.appType,
+            builderMode: featureState.builderMode,
+            fileCount: bundle.files.length,
+          },
+          null,
+          2,
+        ),
+      );
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      triggerBrowserDownload(blob, `${bundle.folderName}-${exportTarget}.zip`);
+      appendMutationLog({
+        type: "deploy-export",
+        command: exportTarget,
+        details: `Exported ${exportTarget} bundle with ${bundle.files.length} files.`,
+      });
+      setStatusMessage(`${exportTarget === "render" ? "Render" : "Vercel"} export ready.`);
+    } catch (error) {
+      setStatusMessage(`${exportTarget} export failed: ${error.message}`);
+    } finally {
+      setDeployExportTarget("");
+    }
   }
-
-  const exportTarget = target === "vercel" ? "vercel" : "render";
-  const context = {
-    prompt,
-    appType: featureState.appType,
-    builderMode: featureState.builderMode,
-    routes: generatedRoutes,
-    components: generatedComponents,
-    folderName: sanitizeProjectName(prompt || featureState.quickIdea || "builder-project"),
-  };
-
-  try {
-    setDeployExportTarget(exportTarget);
-    setStatusMessage(`Preparing ${exportTarget} export...`);
-
-    const bundle = buildDeployExportFiles(exportTarget, generatedCodeFiles, context);
-    const zip = new JSZip();
-    const root = zip.folder(`${bundle.folderName}-${exportTarget}`);
-
-    bundle.files.forEach((file) => {
-      root.file(file.path, file.content || "");
-    });
-
-    root.file(
-      ".builder-deploy-meta.json",
-      JSON.stringify(
-        {
-          generatedAt: new Date().toISOString(),
-          target: exportTarget,
-          prompt,
-          projectId: projectId || "",
-          appType: featureState.appType,
-          builderMode: featureState.builderMode,
-          fileCount: bundle.files.length,
-        },
-        null,
-        2,
-      ),
-    );
-
-    const blob = await zip.generateAsync({ type: "blob" });
-    triggerBrowserDownload(blob, `${bundle.folderName}-${exportTarget}.zip`);
-    appendMutationLog({
-      type: "deploy-export",
-      command: exportTarget,
-      details: `Exported ${exportTarget} bundle with ${bundle.files.length} files.`,
-    });
-    setStatusMessage(`${exportTarget === "render" ? "Render" : "Vercel"} export ready.`);
-  } catch (error) {
-    setStatusMessage(`${exportTarget} export failed: ${error.message}`);
-  } finally {
-    setDeployExportTarget("");
-  }
-}
 
   async function handleGeneratedAppMutation(customInstruction) {
     const instruction = (customInstruction ?? mutationLoopInput).trim();
@@ -2831,6 +2936,7 @@ async function downloadDeploymentBundle(target) {
         body: JSON.stringify({
           prompt: mutationPrompt,
           instruction,
+          project_memory: builderProjectMemory,
           current_layout: layoutState,
           active_modules: activeModules,
           feature_state: featureState,
@@ -2859,6 +2965,9 @@ async function downloadDeploymentBundle(target) {
       setGeneratedComponents(nextComponents);
       setBackendNextActions(Array.isArray(data.next_best_actions) ? data.next_best_actions : backendNextActions);
       setBackendMutationSummary(Array.isArray(data.mutation_summary) ? data.mutation_summary : []);
+      if (data?.project_memory) {
+        setBuilderProjectMemory(data.project_memory);
+      }
 
       const combinedPrompt = `${prompt || featureState.quickIdea} → ${instruction}`;
       setPrompt(combinedPrompt);
@@ -2997,6 +3106,7 @@ async function downloadDeploymentBundle(target) {
           style: simpleDraft.style || "Dark glass",
           routes,
           components,
+          project_memory: builderProjectMemory,
           system_planner: systemPlanner,
           system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
           rv_template_key: selectedRvTemplateKey,
@@ -3006,6 +3116,9 @@ async function downloadDeploymentBundle(target) {
 
       if (!response.ok) throw new Error("Code generation request failed");
       const data = await response.json();
+      if (data?.project_memory) {
+        setBuilderProjectMemory(data.project_memory);
+      }
       const rawFiles = Array.isArray(data.generated_files) ? data.generated_files : [];
       const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
         prompt: sourcePrompt,
@@ -3057,6 +3170,7 @@ async function downloadDeploymentBundle(target) {
           current_layout: layoutState,
           active_modules: activeModules,
           feature_state: featureState,
+          project_memory: builderProjectMemory,
           system_planner: systemPlanner,
         }),
       });
@@ -3074,6 +3188,9 @@ async function downloadDeploymentBundle(target) {
       const nextFileTree = Array.isArray(data.file_tree) ? data.file_tree : [];
       const nextRoutes = Array.isArray(data.routes) ? data.routes : [];
       const nextComponents = Array.isArray(data.components) ? data.components : [];
+      if (data?.project_memory) {
+        setBuilderProjectMemory(data.project_memory);
+      }
       setGeneratedFileTree(nextFileTree);
       setGeneratedRoutes(nextRoutes);
       setGeneratedComponents(nextComponents);
@@ -3299,9 +3416,9 @@ async function downloadDeploymentBundle(target) {
       prev.map((item) =>
         item.id === id
           ? {
-              ...item,
-              [field]: field === "name" ? value : Number(value),
-            }
+            ...item,
+            [field]: field === "name" ? value : Number(value),
+          }
           : item,
       ),
     );
@@ -3772,6 +3889,16 @@ async function downloadDeploymentBundle(target) {
           overflow: hidden;
         }
 
+        .chat-advice-stack { display: grid; gap: 10px; margin-top: 10px; }
+        .chat-advice-card {
+          border-radius: 16px;
+          padding: 12px;
+          border: 1px solid rgba(148,163,184,.14);
+          background: rgba(255,255,255,.03);
+          display: grid;
+          gap: 6px;
+        }
+        .chat-advice-card strong { font-size: 13px; }
         .footer-note { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
         @media (max-width: 1180px) {
           .shell-grid { grid-template-columns: 1fr; }
@@ -3803,6 +3930,15 @@ async function downloadDeploymentBundle(target) {
         .chat-role .dot { width: 10px; height: 10px; border-radius: 999px; }
         .chat-body { white-space: pre-wrap; line-height: 1.6; }
         .chat-assist-meta { color: var(--muted); font-size: 13px; }
+        .chat-question-list, .chat-action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .chat-question-pill {
+          border-radius: 14px;
+          padding: 9px 12px;
+          background: rgba(255,255,255,.04);
+          border: 1px solid rgba(148,163,184,.14);
+          color: var(--muted);
+          font-size: 13px;
+        }
         .chat-composer { display: grid; gap: 12px; }
         .chat-composer textarea { min-height: 120px; resize: vertical; }
         .chat-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -3909,62 +4045,62 @@ async function downloadDeploymentBundle(target) {
                   <span className="muted">Selected: {selectedRvTemplate.label}</span>
                 </div>
 
-              <Panel title="RV Intelligence + Affiliate Engine" subtitle="Turn RV ideas into real sizing guidance and monetizable product recommendations." compact>
-                <div className="simple-builder-grid">
-                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
-                    <div className="module-top">
-                      <strong>{selectedRvTemplate.label}</strong>
-                      <span className="tag">{rvCampingProfile.label}</span>
-                    </div>
-                    <div className="muted">{rvCampingProfile.note}</div>
-                    <label className="simple-field">
-                      <span>Camping profile</span>
-                      <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
-                        {RV_CAMPING_PROFILES.map((profile) => (
-                          <option key={profile.key} value={profile.key}>{profile.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="card-grid">
-                      <div className="card">
-                        <span className="muted">Battery target</span>
-                        <strong>{rvIntelligence.batteryAh}Ah</strong>
+                <Panel title="RV Intelligence + Affiliate Engine" subtitle="Turn RV ideas into real sizing guidance and monetizable product recommendations." compact>
+                  <div className="simple-builder-grid">
+                    <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                      <div className="module-top">
+                        <strong>{selectedRvTemplate.label}</strong>
+                        <span className="tag">{rvCampingProfile.label}</span>
                       </div>
-                      <div className="card">
-                        <span className="muted">Solar target</span>
-                        <strong>{rvIntelligence.solarWatts}W</strong>
-                      </div>
-                      <div className="card">
-                        <span className="muted">Inverter guide</span>
-                        <strong>{rvIntelligence.inverterWatts}W</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
-                    <div className="module-top">
-                      <strong>Affiliate-ready suggestions</strong>
-                      <span className="tag">{rvAffiliateRecommendations.length} picks</span>
-                    </div>
-                    <div className="muted">{rvIntelligence.batteryRecommendation}. {rvIntelligence.solarRecommendation}</div>
-                    <div className="module-list">
-                      {rvAffiliateRecommendations.map((item) => (
-                        <div key={item.key} className="module-item">
-                          <div className="module-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">{item.cta}</span>
-                          </div>
-                          <div className="muted">{item.fit}</div>
+                      <div className="muted">{rvCampingProfile.note}</div>
+                      <label className="simple-field">
+                        <span>Camping profile</span>
+                        <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
+                          {RV_CAMPING_PROFILES.map((profile) => (
+                            <option key={profile.key} value={profile.key}>{profile.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="card-grid">
+                        <div className="card">
+                          <span className="muted">Battery target</span>
+                          <strong>{rvIntelligence.batteryAh}Ah</strong>
                         </div>
-                      ))}
+                        <div className="card">
+                          <span className="muted">Solar target</span>
+                          <strong>{rvIntelligence.solarWatts}W</strong>
+                        </div>
+                        <div className="card">
+                          <span className="muted">Inverter guide</span>
+                          <strong>{rvIntelligence.inverterWatts}W</strong>
+                        </div>
+                      </div>
                     </div>
-                    <div className="zone-chip-row">
-                      <span className="zone-chip">Cost guide · ${rvIntelligence.estimatedCostLow}–${rvIntelligence.estimatedCostHigh}</span>
-                      <span className="zone-chip">{rvIntelligence.batteryTier}</span>
-                      <span className="zone-chip">{rvIntelligence.solarTier}</span>
+                    <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
+                      <div className="module-top">
+                        <strong>Affiliate-ready suggestions</strong>
+                        <span className="tag">{rvAffiliateRecommendations.length} picks</span>
+                      </div>
+                      <div className="muted">{rvIntelligence.batteryRecommendation}. {rvIntelligence.solarRecommendation}</div>
+                      <div className="module-list">
+                        {rvAffiliateRecommendations.map((item) => (
+                          <div key={item.key} className="module-item">
+                            <div className="module-top">
+                              <strong>{item.title}</strong>
+                              <span className="tag">{item.cta}</span>
+                            </div>
+                            <div className="muted">{item.fit}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="zone-chip-row">
+                        <span className="zone-chip">Cost guide · ${rvIntelligence.estimatedCostLow}–${rvIntelligence.estimatedCostHigh}</span>
+                        <span className="zone-chip">{rvIntelligence.batteryTier}</span>
+                        <span className="zone-chip">{rvIntelligence.solarTier}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Panel>
+                </Panel>
 
               </Panel>
 
@@ -4074,10 +4210,10 @@ async function downloadDeploymentBundle(target) {
                       selectedSimpleStarter.key === "dashboard"
                         ? "admin panel"
                         : selectedSimpleStarter.key === "assistant"
-                        ? "assistant app"
-                        : selectedSimpleStarter.key === "content"
-                        ? "content app"
-                        : "tool app",
+                          ? "assistant app"
+                          : selectedSimpleStarter.key === "content"
+                            ? "content app"
+                            : "tool app",
                   }}
                   result={result}
                   prompt={buildSimpleStarterPrompt(simpleDraft)}
@@ -4106,8 +4242,8 @@ async function downloadDeploymentBundle(target) {
                           {index === 0
                             ? selectedSimpleStarter.label
                             : index === 1
-                            ? getLayoutLabel(layoutState)
-                            : "Simple mode is preparing the first real builder view."}
+                              ? getLayoutLabel(layoutState)
+                              : "Simple mode is preparing the first real builder view."}
                         </div>
                       </div>
                     </div>
@@ -4669,219 +4805,219 @@ async function downloadDeploymentBundle(target) {
       ) : null}
 
       {uiMode === "pro" ? (
-      <>
-      <div className="shell-grid">
+        <>
+          <div className="shell-grid">
 
-        {layoutState.sidebar ? (
-          <aside className="sidebar">
-            <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
-              <div className="sidebar-nav">
-                {sidebarItems.map((item) => (
-                  <button
-                    key={item.key}
-                    className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
-                    onClick={() => setSelectedSidebarView(item.key)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </Panel>
-            <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
-              <div className="module-list">
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Shell</strong>
-                    <span className="tag">{layoutState.shell}</span>
+            {layoutState.sidebar ? (
+              <aside className="sidebar">
+                <Panel title="Workspace Rail" subtitle="Dynamic navigation unlocked by sidebar mutation" compact>
+                  <div className="sidebar-nav">
+                    {sidebarItems.map((item) => (
+                      <button
+                        key={item.key}
+                        className={`sidebar-btn ${selectedSidebarView === item.key ? "active" : ""}`}
+                        onClick={() => setSelectedSidebarView(item.key)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
-                  <div className="muted">Mode: {layoutState.mode}</div>
-                </div>
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Split</strong>
-                    <span className="tag">{layoutState.split ? "On" : "Off"}</span>
+                </Panel>
+                <Panel title="Layout DNA" subtitle="The builder now changes shell structure, not just features" compact>
+                  <div className="module-list">
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Shell</strong>
+                        <span className="tag">{layoutState.shell}</span>
+                      </div>
+                      <div className="muted">Mode: {layoutState.mode}</div>
+                    </div>
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Split</strong>
+                        <span className="tag">{layoutState.split ? "On" : "Off"}</span>
+                      </div>
+                      <div className="muted">Preview style: {layoutState.previewStyle}</div>
+                    </div>
                   </div>
-                  <div className="muted">Preview style: {layoutState.previewStyle}</div>
-                </div>
-              </div>
-            </Panel>
-          </aside>
-        ) : null}
-
-        <main className="main-workspace">
-          <div className="stack">
-            <Panel
-              title="Builder Brain"
-              subtitle="Detects app type, builder mode, summary style, and recommended modules"
-              actions={
-                <>
-                  <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
-                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
-                </>
-              }
-            >
-              <div className="brain-grid">
-                <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
-                <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
-                <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
-              </div>
-              <div style={{ height: 14 }} />
-              <textarea
-                className="prompt-box"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
-              />
-              <div style={{ height: 12 }} />
-              <div className="command-row">
-                {QUICK_COMMANDS.map((item) => (
-                  <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
-                    {item}
-                  </button>
-                ))}
-              </div>
-              <div style={{ height: 14 }} />
-              <div className="result-box">{builderInsight}</div>
-            </Panel>
-
-            <Panel
-              title="Command Mutations"
-              subtitle="This now mutates modules and the workspace shell"
-              actions={
-                <>
-                  <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
-                  <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
-                </>
-              }
-            >
-              <div className="status-grid">
-                <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
-                <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
-                <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
-              </div>
-              <div style={{ height: 14 }} />
-              <div className="module-list">
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Latest status</strong>
-                    <span className="tag">Live</span>
-                  </div>
-                  <div className="muted">{statusMessage}</div>
-                </div>
-                <div className="module-item">
-                  <div className="module-top">
-                    <strong>Workspace shape</strong>
-                    <span className="tag">{getLayoutLabel(layoutState)}</span>
-                  </div>
-                  <div className="muted">Use natural commands to reshape the app shell.</div>
-                </div>
-              </div>
-            </Panel>
-
-            {activeModules.includes("quick_actions") ? (
-              <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
-                <div className="quick-grid">
-                  <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
-                  <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
-                  <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
-                  <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
-                  <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
-                  <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
-                </div>
-              </Panel>
+                </Panel>
+              </aside>
             ) : null}
 
-            <Panel
-              title="Battery Planner Builder"
-              subtitle="Your backend is still connected. This stays as a real functional module."
-              actions={
-                <>
-                  <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
-                    {isLoading ? "Running..." : "Run /battery-plan"}
-                  </button>
-                  <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
-                </>
-              }
-            >
-              <div className="builder-form">
-                <div className="appliance-table">
-                  {appliances.map((item) => (
-                    <div key={item.id} className="appliance-row">
-                      <input
-                        className="text-input"
-                        value={item.name}
-                        onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
-                        placeholder="Appliance"
-                      />
-                      <input
-                        className="number-input"
-                        type="number"
-                        value={item.watts}
-                        onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
-                        placeholder="Watts"
-                      />
-                      <input
-                        className="number-input"
-                        type="number"
-                        value={item.hours}
-                        onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
-                        placeholder="Hours"
-                      />
-                      <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
-                    </div>
-                  ))}
-                </div>
-                <div className="appliance-presets">
-                  {APPLIANCE_PRESETS.map((preset) => (
-                    <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
-                      + {preset.name}
-                    </button>
-                  ))}
-                </div>
-                <div className="result-grid">
-                  <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
-                  <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
-                  <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
-                  <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
-                </div>
-              </div>
-            </Panel>
-
-            <Panel
-              title="Results Summary"
-              subtitle="Saved results, export, and summary stay active while layout mutates"
-              actions={
-                <>
-                  <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
-                  <button className="mini-btn" onClick={exportReport}>Export report</button>
-                </>
-              }
-            >
-              <div className="result-grid">
-                <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
-                <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
-                <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
-                <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
-              </div>
-              <div style={{ height: 14 }} />
-              <div className="result-box">{computedSummary}</div>
-              <div style={{ height: 14 }} />
-              <div className="saved-grid">
-                {savedResults.slice(0, 4).map((item) => (
-                  <div key={item.id} className="saved-card">
-                    <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
-                    <div className="muted">{item.time}</div>
-                    <div className="muted">{item.summary}</div>
-                    <div className="tag">{getLayoutLabel(item.layout)}</div>
+            <main className="main-workspace">
+              <div className="stack">
+                <Panel
+                  title="Builder Brain"
+                  subtitle="Detects app type, builder mode, summary style, and recommended modules"
+                  actions={
+                    <>
+                      <button className="mini-btn" onClick={() => runBuilderBrain(prompt)}>Analyze prompt</button>
+                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply mutation</button>
+                    </>
+                  }
+                >
+                  <div className="brain-grid">
+                    <StatCard label="App Type" value={analysis.appType} hint="Detected from your current prompt" />
+                    <StatCard label="Builder Mode" value={analysis.builderMode} hint="Used to shape tool behavior" accent="var(--accent-2)" />
+                    <StatCard label="Summary Style" value={analysis.summaryStyle} hint="Controls results explanation tone" accent="var(--success)" />
                   </div>
-                ))}
-                {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
-              </div>
-            </Panel>
-          </div>
+                  <div style={{ height: 14 }} />
+                  <textarea
+                    className="prompt-box"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder='Try: "make dashboard, add sidebar, split layout, add inspector"'
+                  />
+                  <div style={{ height: 12 }} />
+                  <div className="command-row">
+                    {QUICK_COMMANDS.map((item) => (
+                      <button key={item} className="tab-btn" onClick={() => { setPrompt(item); handleMutationCommand(item); }}>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ height: 14 }} />
+                  <div className="result-box">{builderInsight}</div>
+                </Panel>
 
-          <div className="stack">
-            
+                <Panel
+                  title="Command Mutations"
+                  subtitle="This now mutates modules and the workspace shell"
+                  actions={
+                    <>
+                      <button className="mini-btn" onClick={() => handleMutationCommand(prompt)}>Apply current command</button>
+                      <button className="mini-btn" onClick={() => setPrompt("make dashboard add sidebar split layout")}>Load example</button>
+                    </>
+                  }
+                >
+                  <div className="status-grid">
+                    <StatCard label="Sidebar" value={layoutState.sidebar ? "Enabled" : "Hidden"} hint="Left navigation rail" />
+                    <StatCard label="Split Layout" value={layoutState.split ? "Enabled" : "Off"} hint="Dual workspace columns" accent="var(--warning)" />
+                    <StatCard label="Inspector" value={layoutState.inspector ? "Enabled" : "Hidden"} hint="Right-side detail panel" accent="var(--danger)" />
+                  </div>
+                  <div style={{ height: 14 }} />
+                  <div className="module-list">
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Latest status</strong>
+                        <span className="tag">Live</span>
+                      </div>
+                      <div className="muted">{statusMessage}</div>
+                    </div>
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>Workspace shape</strong>
+                        <span className="tag">{getLayoutLabel(layoutState)}</span>
+                      </div>
+                      <div className="muted">Use natural commands to reshape the app shell.</div>
+                    </div>
+                  </div>
+                </Panel>
+
+                {activeModules.includes("quick_actions") ? (
+                  <Panel title="Quick Actions" subtitle="Fast builder mutations and planner actions">
+                    <div className="quick-grid">
+                      <button className="pill" onClick={() => handleMutationCommand("make dashboard")}>Make dashboard</button>
+                      <button className="pill" onClick={() => handleMutationCommand("add sidebar")}>Add sidebar</button>
+                      <button className="pill" onClick={() => handleMutationCommand("split layout")}>Split layout</button>
+                      <button className="pill" onClick={() => handleMutationCommand("add inspector")}>Add inspector</button>
+                      <button className="pill" onClick={() => handleMutationCommand("focus preview")}>Focus preview</button>
+                      <button className="pill" onClick={() => handleMutationCommand("return to classic layout")}>Classic layout</button>
+                    </div>
+                  </Panel>
+                ) : null}
+
+                <Panel
+                  title="Battery Planner Builder"
+                  subtitle="Your backend is still connected. This stays as a real functional module."
+                  actions={
+                    <>
+                      <button className="mini-btn" onClick={runBatteryPlan} disabled={isLoading}>
+                        {isLoading ? "Running..." : "Run /battery-plan"}
+                      </button>
+                      <button className="mini-btn" onClick={() => addApplianceRow()}>Add row</button>
+                    </>
+                  }
+                >
+                  <div className="builder-form">
+                    <div className="appliance-table">
+                      {appliances.map((item) => (
+                        <div key={item.id} className="appliance-row">
+                          <input
+                            className="text-input"
+                            value={item.name}
+                            onChange={(e) => updateApplianceRow(item.id, "name", e.target.value)}
+                            placeholder="Appliance"
+                          />
+                          <input
+                            className="number-input"
+                            type="number"
+                            value={item.watts}
+                            onChange={(e) => updateApplianceRow(item.id, "watts", e.target.value)}
+                            placeholder="Watts"
+                          />
+                          <input
+                            className="number-input"
+                            type="number"
+                            value={item.hours}
+                            onChange={(e) => updateApplianceRow(item.id, "hours", e.target.value)}
+                            placeholder="Hours"
+                          />
+                          <button className="ghost-pill" onClick={() => removeApplianceRow(item.id)}>Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="appliance-presets">
+                      {APPLIANCE_PRESETS.map((preset) => (
+                        <button key={preset.name} className="tab-btn" onClick={() => addApplianceRow(preset)}>
+                          + {preset.name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="result-grid">
+                      <input className="number-input" type="number" value={batteryVoltage} onChange={(e) => setBatteryVoltage(Number(e.target.value))} placeholder="Battery voltage" />
+                      <input className="number-input" type="number" value={autonomyDays} onChange={(e) => setAutonomyDays(Number(e.target.value))} placeholder="Autonomy days" />
+                      <input className="number-input" type="number" value={sunHours} onChange={(e) => setSunHours(Number(e.target.value))} placeholder="Sun hours" />
+                      <input className="number-input" type="number" step="0.01" value={systemLoss} onChange={(e) => setSystemLoss(Number(e.target.value))} placeholder="System loss" />
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="Results Summary"
+                  subtitle="Saved results, export, and summary stay active while layout mutates"
+                  actions={
+                    <>
+                      <button className="mini-btn" onClick={saveCurrentResult}>Save result</button>
+                      <button className="mini-btn" onClick={exportReport}>Export report</button>
+                    </>
+                  }
+                >
+                  <div className="result-grid">
+                    <StatCard label="Daily Wh" value={result ? result.daily_wh : "—"} hint="Raw consumption" />
+                    <StatCard label="Adjusted Wh" value={result ? result.adjusted_daily_wh : "—"} hint="With losses" accent="var(--warning)" />
+                    <StatCard label="Battery Ah" value={result ? result.battery_ah : "—"} hint="Recommended size" accent="var(--success)" />
+                    <StatCard label="Solar W" value={result ? result.solar_watts : "—"} hint="Suggested solar" accent="var(--accent-2)" />
+                  </div>
+                  <div style={{ height: 14 }} />
+                  <div className="result-box">{computedSummary}</div>
+                  <div style={{ height: 14 }} />
+                  <div className="saved-grid">
+                    {savedResults.slice(0, 4).map((item) => (
+                      <div key={item.id} className="saved-card">
+                        <strong>{item.result?.battery_ah}Ah · {item.result?.solar_watts}W</strong>
+                        <div className="muted">{item.time}</div>
+                        <div className="muted">{item.summary}</div>
+                        <div className="tag">{getLayoutLabel(item.layout)}</div>
+                      </div>
+                    ))}
+                    {!savedResults.length ? <div className="saved-card"><strong>No saved results yet</strong><div className="muted">Run the planner and save a snapshot.</div></div> : null}
+                  </div>
+                </Panel>
+              </div>
+
+              <div className="stack">
+
                 <Panel title="System Planner" subtitle="The builder now plans connected systems, not only files.">
                   <div className="module-top">
                     <strong>{systemPlanner.summary}</strong>
@@ -4963,118 +5099,118 @@ async function downloadDeploymentBundle(target) {
                   </div>
                 </Panel>
 
-{activeModules.includes("live_preview") ? (
-              <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
-                <PreviewCanvas
-                  layout={layoutState}
-                  activeModules={activeModules}
-                  featureState={featureState}
-                  result={result}
-                  prompt={prompt}
-                />
-              </Panel>
-            ) : null}
+                {activeModules.includes("live_preview") ? (
+                  <Panel title="Live Layout Preview" subtitle="The UI now mutates as commands change the builder shell">
+                    <PreviewCanvas
+                      layout={layoutState}
+                      activeModules={activeModules}
+                      featureState={featureState}
+                      result={result}
+                      prompt={prompt}
+                    />
+                  </Panel>
+                ) : null}
 
-            {activeModules.includes("active_features_panel") ? (
-              <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
-                <div className="module-list">
-                  {activeModuleMeta.map((module) => (
-                    <div key={module.key} className="module-item">
-                      <div className="module-top">
-                        <strong>{module.label}</strong>
-                        <span className="tag">{module.category}</span>
+                {activeModules.includes("active_features_panel") ? (
+                  <Panel title="Active Features Panel" subtitle="Behavior modules that are currently enabled">
+                    <div className="module-list">
+                      {activeModuleMeta.map((module) => (
+                        <div key={module.key} className="module-item">
+                          <div className="module-top">
+                            <strong>{module.label}</strong>
+                            <span className="tag">{module.category}</span>
+                          </div>
+                          <div className="muted">{module.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+                ) : null}
+
+                {activeModules.includes("status_panel") ? (
+                  <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
+                    <div className="module-list">
+                      <div className="module-item">
+                        <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
+                        <div className="muted">{statusText}</div>
                       </div>
-                      <div className="muted">{module.description}</div>
+                      <div className="module-item">
+                        <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
+                        <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </Panel>
-            ) : null}
+                  </Panel>
+                ) : null}
 
-            {activeModules.includes("status_panel") ? (
-              <Panel title="Builder Status Panel" subtitle="Current state of the system after feature and layout mutations">
-                <div className="module-list">
-                  <div className="module-item">
-                    <div className="module-top"><strong>Status</strong><span className="tag">runtime</span></div>
-                    <div className="muted">{statusText}</div>
+                <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
+                  <div className="mutation-list">
+                    {mutationLog.slice(0, 10).map((item) => (
+                      <div key={item.id} className="mutation-item">
+                        <div className="mutation-top">
+                          <strong>{item.type}</strong>
+                          <span className="tag">{item.time}</span>
+                        </div>
+                        <div>{item.command}</div>
+                        <div className="muted">{item.details}</div>
+                      </div>
+                    ))}
+                    {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
                   </div>
-                  <div className="module-item">
-                    <div className="module-top"><strong>Detected Modes</strong><span className="tag">brain</span></div>
-                    <div className="muted">{analysis.detectedModes.length ? analysis.detectedModes.join(", ") : "No special modes detected yet."}</div>
-                  </div>
-                </div>
-              </Panel>
-            ) : null}
-
-            <Panel title="Mutation Log" subtitle="Tracks command mutations, backend runs, exports, and resets">
-              <div className="mutation-list">
-                {mutationLog.slice(0, 10).map((item) => (
-                  <div key={item.id} className="mutation-item">
-                    <div className="mutation-top">
-                      <strong>{item.type}</strong>
-                      <span className="tag">{item.time}</span>
-                    </div>
-                    <div>{item.command}</div>
-                    <div className="muted">{item.details}</div>
-                  </div>
-                ))}
-                {!mutationLog.length ? <div className="mutation-item"><strong>No mutations yet</strong><div className="muted">Apply a command to start the log.</div></div> : null}
+                </Panel>
               </div>
-            </Panel>
+            </main>
+
+            {layoutState.inspector ? (
+              <aside className="stack">
+                <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
+                  <div className="history-list">
+                    {commandHistory.slice(0, 5).map((item) => (
+                      <div key={item.id} className="history-item">
+                        <div className="history-top">
+                          <strong>{item.prompt}</strong>
+                          <span className="tag">{item.time}</span>
+                        </div>
+                        <div className="muted">{item.appType} · {item.builderMode}</div>
+                      </div>
+                    ))}
+                    {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
+                  </div>
+                </Panel>
+
+                {activeModules.includes("affiliate_suggestions") ? (
+                  <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
+                    <div className="affiliate-list">
+                      {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
+                        <div key={item.title} className="affiliate-item">
+                          <div className="affiliate-top">
+                            <strong>{item.title}</strong>
+                            <span className="tag">smart fit</span>
+                          </div>
+                          <div className="muted">{item.fit}</div>
+                        </div>
+                      )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
+                    </div>
+                  </Panel>
+                ) : null}
+
+                {activeModules.includes("notes_panel") ? (
+                  <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
+                    <textarea
+                      className="notes-box"
+                      value={featureState.notes}
+                      onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
+                    />
+                  </Panel>
+                ) : null}
+              </aside>
+            ) : null}
           </div>
-        </main>
 
-        {layoutState.inspector ? (
-          <aside className="stack">
-            <Panel title="Inspector" subtitle="Extra detail panel unlocked by layout mutation">
-              <div className="history-list">
-                {commandHistory.slice(0, 5).map((item) => (
-                  <div key={item.id} className="history-item">
-                    <div className="history-top">
-                      <strong>{item.prompt}</strong>
-                      <span className="tag">{item.time}</span>
-                    </div>
-                    <div className="muted">{item.appType} · {item.builderMode}</div>
-                  </div>
-                ))}
-                {!commandHistory.length ? <div className="history-item"><strong>No commands yet</strong><div className="muted">Command history appears here.</div></div> : null}
-              </div>
-            </Panel>
-
-            {activeModules.includes("affiliate_suggestions") ? (
-              <Panel title="Affiliate Suggestions" subtitle="Keeps your monetization block visible even while layout mutates">
-                <div className="affiliate-list">
-                  {affiliateSuggestions.length ? affiliateSuggestions.map((item) => (
-                    <div key={item.title} className="affiliate-item">
-                      <div className="affiliate-top">
-                        <strong>{item.title}</strong>
-                        <span className="tag">smart fit</span>
-                      </div>
-                      <div className="muted">{item.fit}</div>
-                    </div>
-                  )) : <div className="affiliate-item"><strong>No smart match yet</strong><div className="muted">Run a plan to generate contextual affiliate suggestions.</div></div>}
-                </div>
-              </Panel>
-            ) : null}
-
-            {activeModules.includes("notes_panel") ? (
-              <Panel title="Notes Panel" subtitle="Use this for builder planning and UI mutation ideas">
-                <textarea
-                  className="notes-box"
-                  value={featureState.notes}
-                  onChange={(e) => setFeatureState((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Example: next step = let layout mutation reorder panels by prompt intent"
-                />
-              </Panel>
-            ) : null}
-          </aside>
-        ) : null}
-      </div>
-
-      <div className="footer-note">
-        Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, system planner, and the new RV smart template system are preserved. New step: the builder now plans connected RV product systems before code generation.
-      </div>
-      </>
+          <div className="footer-note">
+            Builder brain, mutation log, export flow, local saves, affiliate block, backend battery planner, system planner, and the new RV smart template system are preserved. New step: the builder now plans connected RV product systems before code generation.
+          </div>
+        </>
       ) : uiMode === "chat" ? (
         <div className="chat-builder-shell">
           <div className="chat-side-stack">
@@ -5153,7 +5289,7 @@ async function downloadDeploymentBundle(target) {
                   <button className="ghost-pill" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
                     Quick mutate generated files
                   </button>
-                  <button className="ghost-pill" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); }}>Clear chat</button>
+                  <button className="ghost-pill" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>Clear chat</button>
                 </div>
               </div>
             </Panel>
@@ -5174,6 +5310,89 @@ async function downloadDeploymentBundle(target) {
                     </div>
                     <div className="chat-body">{message.text}</div>
                     {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
+                    {Array.isArray(message.questions) && message.questions.length ? (
+                      <div className="chat-question-list">
+                        {message.questions.map((question) => (
+                          <div key={question} className="chat-question-pill">{question}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && message.advice ? (
+                      <div className="chat-advice-stack">
+                        {Array.isArray(message.advice.upgrades) ? message.advice.upgrades.map((item) => (
+                          <div key={`upgrade_${item.label}`} className="chat-advice-card">
+                            <strong>Upgrade: {item.label}</strong>
+                            <div className="muted">{item.reason}</div>
+                          </div>
+                        )) : null}
+                        {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
+                          <div key={`caution_${item.label}`} className="chat-advice-card">
+                            <strong>Caution: {item.label}</strong>
+                            <div className="muted">{item.reason}</div>
+                          </div>
+                        )) : null}
+                        {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
+                          <div key={`better_${item.label}`} className="chat-advice-card">
+                            <strong>Better option: {item.label}</strong>
+                            <div className="muted">{item.reason}</div>
+                          </div>
+                        )) : null}
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
+                      <div className="chat-advice-stack">
+                        {message.researchFindings.slice(0, 4).map((item) => (
+                          <a
+                            key={`research_${item.url || item.title}`}
+                            className="chat-advice-card"
+                            href={item.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <strong>Research: {item.title}</strong>
+                            <div className="muted">{item.snippet || "Source found for this topic."}</div>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && message.researchRecommendation?.prompt ? (
+                      <div className="chat-advice-stack">
+                        <div className="chat-advice-card">
+                          <strong>Why this recommendation: {message.researchRecommendation.label || "Recommended next move"}</strong>
+                          <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
+                      <div className="chat-advice-stack">
+                        {message.knowledgeHits.map((item) => (
+                          <a
+                            key={`knowledge_${item.url || item.title}`}
+                            className="chat-advice-card"
+                            href={item.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <strong>Learned knowledge: {item.title}</strong>
+                            <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (
+                      <div className="chat-action-row">
+                        {message.actions.map((action) => (
+                          <button
+                            key={`${message.id}_${action.label}_${action.prompt}`}
+                            className="chat-chip"
+                            type="button"
+                            onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 )) : (
                   <div className="chat-empty-state">
@@ -5209,6 +5428,161 @@ async function downloadDeploymentBundle(target) {
                   <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
                 ))}
               </div>
+            </Panel>
+
+            <Panel title="Project memory" subtitle="What the builder currently remembers about this project.">
+              <div className="card-grid">
+                <div className="card">
+                  <strong>Summary</strong>
+                  <div className="muted">{builderProjectMemory.project_summary || "No project summary yet"}</div>
+                </div>
+                <div className="card">
+                  <strong>App type</strong>
+                  <div className="muted">{builderProjectMemory.app_type || featureState.appType}</div>
+                </div>
+                <div className="card">
+                  <strong>Mode</strong>
+                  <div className="muted">{builderProjectMemory.builder_mode || featureState.builderMode}</div>
+                </div>
+                <div className="card">
+                  <strong>Project state</strong>
+                  <div className="muted">{builderProjectMemory.has_generated_app ? "Generated app in progress" : "Planning stage"}</div>
+                </div>
+                <div className="card">
+                  <strong>Global knowledge</strong>
+                  <div className="muted">{builderProjectMemory.global_knowledge_count || 0} learned items</div>
+                </div>
+              </div>
+              {globalKnowledgeTopics.length ? (
+                <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                  {globalKnowledgeTopics.map((topic) => (
+                    <span key={topic} className="zone-chip">Knowledge topic · {topic}</span>
+                  ))}
+                </div>
+              ) : null}
+              <div className="zone-chip-row" style={{ marginTop: 14 }}>
+                {Array.isArray(builderProjectMemory.systems) && builderProjectMemory.systems.length
+                  ? builderProjectMemory.systems.map((system) => (
+                    <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
+                  ))
+                  : <span className="zone-chip">No systems locked yet</span>}
+              </div>
+              {builderProjectMemory.decisions ? (
+                <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                  {typeof builderProjectMemory.decisions.auth_required === "boolean" ? (
+                    <span className="zone-chip">{builderProjectMemory.decisions.auth_required ? "Login required" : "Open access"}</span>
+                  ) : null}
+                  {typeof builderProjectMemory.decisions.billing_enabled === "boolean" ? (
+                    <span className="zone-chip">{builderProjectMemory.decisions.billing_enabled ? "Billing enabled" : "No billing"}</span>
+                  ) : null}
+                  {builderProjectMemory.decisions.product_shape ? (
+                    <span className="zone-chip">Shape · {builderProjectMemory.decisions.product_shape}</span>
+                  ) : null}
+                </div>
+              ) : null}
+              {Array.isArray(builderProjectMemory.unresolved_questions) && builderProjectMemory.unresolved_questions.length ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  {builderProjectMemory.unresolved_questions.map((question) => (
+                    <div key={question} className="module-item">
+                      <strong>Waiting on</strong>
+                      <div className="muted">{question}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {builderProjectMemory.advice ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.map((item) => (
+                    <div key={`memory_upgrade_${item.label}`} className="module-item">
+                      <strong>Upgrade: {item.label}</strong>
+                      <div className="muted">{item.reason}</div>
+                    </div>
+                  )) : null}
+                  {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.map((item) => (
+                    <div key={`memory_caution_${item.label}`} className="module-item">
+                      <strong>Caution: {item.label}</strong>
+                      <div className="muted">{item.reason}</div>
+                    </div>
+                  )) : null}
+                  {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.map((item) => (
+                    <div key={`memory_better_${item.label}`} className="module-item">
+                      <strong>Better option: {item.label}</strong>
+                      <div className="muted">{item.reason}</div>
+                    </div>
+                  )) : null}
+                </div>
+              ) : null}
+              {Array.isArray(builderProjectMemory.latest_research?.findings) && builderProjectMemory.latest_research.findings.length ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  {builderProjectMemory.latest_research.findings.slice(0, 4).map((item) => (
+                    <a
+                      key={`memory_research_${item.url || item.title}`}
+                      className="module-item"
+                      href={item.url || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <strong>Research: {item.title}</strong>
+                      <div className="muted">{item.snippet || "Source found for this topic."}</div>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              {builderProjectMemory.research_recommendation?.prompt ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  <div className="module-item">
+                    <strong>Research recommendation: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>
+                    <div className="muted">{builderProjectMemory.research_recommendation.reason || "Ready to apply from saved research."}</div>
+                    <div className="muted" style={{ marginTop: 8 }}>{builderProjectMemory.research_recommendation.explanation || "The builder chose this because it best fits the saved research and current project state."}</div>
+                    <button
+                      className="chat-chip"
+                      type="button"
+                      style={{ marginTop: 10 }}
+                      onClick={() => submitBuilderChatMessage(builderProjectMemory.research_recommendation.prompt, builderProjectMemory.research_recommendation.mode || "evolve")}
+                    >
+                      Apply researched recommendation
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {Array.isArray(builderProjectMemory.knowledge_items) && builderProjectMemory.knowledge_items.length ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  {builderProjectMemory.knowledge_items.slice(0, 6).map((item) => (
+                    <a
+                      key={`knowledge_bank_${item.url || item.title}`}
+                      className="module-item"
+                      href={item.url || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <strong>Knowledge: {item.title}</strong>
+                      <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              {isKnowledgeLoading ? (
+                <div className="chat-empty-state" style={{ marginTop: 12 }}>Refreshing learned knowledge…</div>
+              ) : null}
+              {globalKnowledgeItems.length ? (
+                <div className="module-list" style={{ marginTop: 12 }}>
+                  {globalKnowledgeItems.map((item) => (
+                    <a
+                      key={`global_knowledge_${item.url || item.title}`}
+                      className="module-item"
+                      href={item.url || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <strong>Global: {item.title}</strong>
+                      <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        Score {Math.round(item.score || 0)} · Used {item.use_count || 0} times · Sources {item.source_count || 1}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </Panel>
 
             <Panel title="Preview + orchestration" subtitle="Current backend orchestration and generated app preview.">
