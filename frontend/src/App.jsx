@@ -785,6 +785,15 @@ function isBuilderWorkspaceRequest(message) {
   return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui)/.test(text);
 }
 
+function isFullStackRequest(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/(frontend and backend|front end and back end|full[- ]stack|full stack)/.test(text)) return true;
+  const hasFrontend = /(frontend|ui|screen|page|dashboard|layout|component)/.test(text);
+  const hasBackend = /(backend|api|server|database|db|endpoint|auth|saved data)/.test(text);
+  return hasFrontend && hasBackend;
+}
+
 function inferBuilderPreferenceTags(message) {
   const text = String(message || "").trim().toLowerCase();
   const tags = [];
@@ -2116,6 +2125,22 @@ export default function App() {
   const showLocalNextActions = uiMode !== "chat" || Boolean(projectId || generatedCodeFiles.length || generatedRoutes.length || generatedComponents.length);
   const primaryNextAction = showLocalNextActions ? nextBestActions[0] || null : null;
   const secondaryNextActions = showLocalNextActions ? nextBestActions.slice(1, 3) : [];
+  const latestAssistantLeadAction = useMemo(() => {
+    const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
+    for (const item of builderChatHistory) {
+      if (item.role !== "assistant" || !Array.isArray(item.actions) || !item.actions.length) continue;
+      const visibleActions = item.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
+      if (visibleActions.length) {
+        return {
+          lead: visibleActions[0],
+          extras: visibleActions.slice(1, 3),
+        };
+      }
+    }
+    return { lead: null, extras: [] };
+  }, [builderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
+  const statusCardPrimaryAction = uiMode === "chat" ? latestAssistantLeadAction.lead : primaryNextAction;
+  const statusCardSecondaryActions = uiMode === "chat" ? latestAssistantLeadAction.extras : secondaryNextActions;
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
@@ -2205,7 +2230,7 @@ export default function App() {
   function buildScopedChatMessage(message) {
     const text = String(message || "").trim();
     if (!text) return text;
-    if (chatAssistantMode === "fullstack") {
+    if (isFullStackRequest(text)) {
       return `Full-stack request covering frontend and backend: ${text}`;
     }
     return text;
@@ -2763,7 +2788,7 @@ export default function App() {
 
     try {
       setIsChatSubmitting(true);
-      if (chatAssistantMode === "builder" || isBuilderWorkspaceRequest(message)) {
+      if (isBuilderWorkspaceRequest(message)) {
         const workspaceSummary = applyBuilderWorkspaceCommand(message);
         setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
         appendBuilderChatMessage({
@@ -2782,11 +2807,10 @@ export default function App() {
           builder_summary: "This chat can help improve the builder UI as well as generated apps.",
           last_builder_workspace_request: message,
         }));
-        setChatAssistantMode("builder");
         return;
       }
 
-      if (chatAssistantMode === "fullstack") {
+      if (isFullStackRequest(message) && generatedCodeFiles.length) {
         const targetScope = fullStackScope || "fullstack";
         setBuilderProjectMemory((prev) => ({
           ...prev,
@@ -5760,7 +5784,7 @@ export default function App() {
           <div className="chat-side-stack">
             <Panel
               title="Build With Chat"
-              subtitle="Type what you want, press Go, and use the same chat to build apps, change frontend and backend together, or improve this builder itself."
+              subtitle="Type what you want, press Go, and use one chat to build the app, change frontend and backend, or improve this builder itself."
               actions={
                 <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
                   {showChatDetails ? "Hide project details" : "Project details"}
@@ -5768,135 +5792,51 @@ export default function App() {
               }
             >
               <div className="chat-composer">
-                <div className={`chat-composer-shell ${chatAssistantMode === "builder" ? "builder-ai" : ""}`}>
+                <div className="chat-composer-shell">
                   <div className="chat-composer-header">
                     <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
                     <p>{projectId ? "Keep the same project moving with one clear request at a time, then press Go." : "Start with one plain-language sentence, then press Go. The builder will ask follow-up questions if anything is missing."}</p>
                   </div>
                   <div className="chat-mode-row">
-                    <span className={`chat-project-state ${chatAssistantMode === "builder" ? "builder-ai" : ""}`}>
-                      {chatAssistantMode === "builder"
-                        ? "Builder AI is active. Go improves this builder."
-                        : chatAssistantMode === "fullstack"
-                          ? "Full-stack AI is active. Go targets frontend and backend together."
-                          : (projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version.")}
+                    <span className="chat-project-state">
+                      {projectId
+                        ? "One chat is active. Ask for app changes, frontend + backend work, or builder improvements."
+                        : "One chat is active. Describe the app, ask for full-stack work, or say if you want to improve this builder."}
                     </span>
-                    <div className="chat-chip-row compact">
-                      <button
-                        className={`chat-chip ${chatAssistantMode === "app" ? "active" : ""}`}
-                        type="button"
-                        onClick={() => setChatAssistantMode("app")}
-                      >
-                        App AI
-                      </button>
-                      <button
-                        className={`chat-chip ${chatAssistantMode === "fullstack" ? "active" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setChatAssistantMode("fullstack");
-                          if (!builderChatDraft.trim()) {
-                            setBuilderChatDraft("add frontend dashboard and backend api with login and saved data");
-                          }
-                        }}
-                      >
-                        Full-stack AI
-                      </button>
-                      <button
-                        className={`chat-chip ${chatAssistantMode === "builder" ? "builder-ai-active" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setChatAssistantMode("builder");
-                          if (!builderChatDraft.trim()) {
-                            setBuilderChatDraft("improve this builder ui");
-                          }
-                        }}
-                      >
-                        Builder AI
-                      </button>
-                    </div>
                   </div>
                   <div className="chat-guidance-strip">
                     <div className="chat-guidance-tile">
                       <strong>Current focus</strong>
-                      <div>{chatAssistantMode === "builder" ? "This builder" : chatAssistantMode === "fullstack" ? "Frontend + backend" : (builderProjectMemory.app_type || featureState.appType)}</div>
+                      <div>{builderProjectMemory.app_type || featureState.appType || "New app"}</div>
                     </div>
                     <div className="chat-guidance-tile">
                       <strong>Best prompt</strong>
                       <div>
-                        {chatAssistantMode === "builder"
-                          ? "Describe one change you want in this builder UI or workflow."
-                          : chatAssistantMode === "fullstack"
-                            ? "Ask for both frontend and backend changes in the same request."
-                            : (projectId ? "Ask for one useful change, including frontend and backend together if you want." : "Say what you want to build, including frontend and backend if needed.")}
+                        {projectId
+                          ? "Ask for one useful change. You can include app changes, frontend + backend work, or builder improvements in the same chat."
+                          : "Say what you want to build. You can also mention frontend + backend together if you need both."}
                       </div>
                     </div>
-                    {chatAssistantMode === "fullstack" ? (
-                      <div className="chat-guidance-tile">
-                        <strong>Workspace writes</strong>
-                        <div>{builderProjectMemory.workspace_edit_enabled ? "Enabled on backend" : "Not enabled, bundle-only fallback"}</div>
-                      </div>
-                    ) : null}
+                    <div className="chat-guidance-tile">
+                      <strong>How it works</strong>
+                      <div>The chat decides whether your message is about the app, full-stack changes, or this builder.</div>
+                    </div>
                   </div>
-                  {chatAssistantMode === "fullstack" ? (
-                    <div className="chat-builder-memory">
-                      <div>
-                        <strong>Apply scope</strong>
-                        <div className="muted">Choose whether Go should target only the frontend, only the backend, or both.</div>
-                      </div>
-                      <div className="chat-chip-row compact">
-                        {[
-                          ["frontend", "Frontend only"],
-                          ["backend", "Backend only"],
-                          ["fullstack", "Frontend + backend"],
-                        ].map(([value, label]) => (
-                          <button
-                            key={value}
-                            className={`chat-chip ${fullStackScope === value ? "active" : ""}`}
-                            type="button"
-                            onClick={() => setFullStackScope(value)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      {builderProjectMemory.workspace_last_backup_manifest ? (
-                        <div className="muted">Last backup manifest: {builderProjectMemory.workspace_last_backup_manifest}</div>
-                      ) : null}
-                    </div>
-                  ) : null}
                   <textarea
                     className="input"
                     value={builderChatDraft}
                     onChange={(e) => setBuilderChatDraft(e.target.value)}
-                    placeholder={chatAssistantMode === "builder"
-                      ? "Example: make the preview larger, simplify the chat, and hide extra details"
-                      : chatAssistantMode === "fullstack"
-                        ? "Example: add frontend dashboard cards and backend endpoints for saved reports"
-                        : (projectId ? "Example: add saved reports and a backend endpoint, or improve this builder UI" : "Example: build a client portal with frontend dashboard and backend API")}
+                    placeholder={projectId
+                      ? "Example: add saved reports and backend endpoints, or improve this builder UI"
+                      : "Example: build a client portal with frontend dashboard and backend API"}
                   />
-                  {chatAssistantMode === "builder" ? (
+                  {builderAssistantPrefs?.pinnedGoals?.length ? (
                     <div className="chat-builder-memory">
                       <div>
-                        <strong>{builderAssistantPrefs.name || "Builder Copilot"}</strong>
-                        <div className="muted">Saved focus: {(builderAssistantPrefs.favoriteFocuses || []).length ? builderAssistantPrefs.favoriteFocuses.join(", ") : "none yet"}</div>
+                        <strong>Saved builder goals</strong>
+                        <div className="muted">You can still ask this same chat to improve the builder itself.</div>
                       </div>
                       <div>
-                        <div className="muted" style={{ marginBottom: 8 }}>Preferences</div>
-                        <div className="chat-chip-row compact">
-                          {builderAssistantRuleOptions.map((rule) => (
-                            <button
-                              key={rule}
-                              className={`chat-chip ${(builderAssistantPrefs.preferredRules || []).includes(rule) ? "builder-pref-active" : ""}`}
-                              type="button"
-                              onClick={() => toggleBuilderAssistantRule(rule)}
-                            >
-                              {rule}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="muted" style={{ marginBottom: 8 }}>Pinned goals</div>
                         <div className="chat-chip-row compact">
                           {(builderAssistantPrefs.pinnedGoals || []).map((goal) => (
                             <button key={goal} className="chat-chip builder-pref-active" type="button" onClick={() => setBuilderChatDraft(goal)}>
@@ -5927,43 +5867,39 @@ export default function App() {
                     </div>
                   ) : null}
                   <div className="chat-quick-ideas">
-                    <div className="muted">{chatAssistantMode === "builder" ? "Builder actions" : chatAssistantMode === "fullstack" ? "Full-stack actions" : "Quick starts"}</div>
+                    <div className="muted">Quick starts</div>
                     <div className="chat-chip-row compact">
-                      {chatAssistantMode === "builder"
-                        ? builderAssistantQuickActions.map((idea) => (
-                          <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
-                        ))
-                        : chatAssistantMode === "fullstack"
-                          ? fullStackQuickActions.map((idea) => (
-                            <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
-                          ))
-                          : visibleChatQuickIdeas.map((idea) => (
-                            <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
-                          ))}
+                      {visibleChatQuickIdeas.map((idea) => (
+                        <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
+                      ))}
+                      {fullStackQuickActions.slice(0, 2).map((idea) => (
+                        <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                      ))}
+                      {builderAssistantQuickActions.slice(0, 1).map((idea) => (
+                        <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                      ))}
                     </div>
                   </div>
-                  {chatAssistantMode !== "builder" ? (
-                    <div className="chat-quick-ideas">
-                      <div className="muted">Conversation style</div>
-                      <div className="chat-chip-row compact">
-                        {[
-                          ["balanced", "Balanced"],
-                          ["answer", "Answer only"],
-                          ["clarify", "Ask questions"],
-                          ["apply", "Apply now"],
-                        ].map(([value, label]) => (
-                          <button
-                            key={value}
-                            className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
-                            type="button"
-                            onClick={() => setChatReplyPreference(value)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="chat-quick-ideas">
+                    <div className="muted">Conversation style</div>
+                    <div className="chat-chip-row compact">
+                      {[
+                        ["balanced", "Balanced"],
+                        ["answer", "Answer only"],
+                        ["clarify", "Ask questions"],
+                        ["apply", "Apply now"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
+                          type="button"
+                          onClick={() => setChatReplyPreference(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  ) : null}
+                  </div>
                   <div className="chat-composer-actions">
                     <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
                       {isChatSubmitting ? "Working..." : "Go"}
@@ -6029,7 +5965,7 @@ export default function App() {
                     ) : null}
                     {message.role === "assistant" && message.advice ? (
                       <div className="chat-advice-stack">
-                        {Array.isArray(message.advice.upgrades) ? message.advice.upgrades.map((item) => (
+                        {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
                           <div key={`upgrade_${item.label}`} className="chat-advice-card">
                             <strong>Good next step: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
@@ -6148,33 +6084,33 @@ export default function App() {
                   <div>{simpleStatusMessage}</div>
                   <div className="muted">{simpleBuilderInsight}</div>
                 </div>
-                {primaryNextAction ? (
+                {statusCardPrimaryAction ? (
                   <div className="chat-primary-next">
                     <div>
-                      <strong>{primaryNextAction.label}</strong>
-                      <div className="muted" style={{ marginTop: 4 }}>{primaryNextAction.reason}</div>
+                      <strong>{statusCardPrimaryAction.label}</strong>
+                      <div className="muted" style={{ marginTop: 4 }}>{statusCardPrimaryAction.reason}</div>
                     </div>
                     <div className="chat-next-actions">
                       <button
                         className="pill primary"
                         type="button"
-                        onClick={() => applyPrimaryNextAction(primaryNextAction)}
+                        onClick={() => uiMode === "chat" ? applyAssistantSuggestedAction(statusCardPrimaryAction) : applyPrimaryNextAction(statusCardPrimaryAction)}
                       >
                         Do this next
                       </button>
                       <button
                         className="chat-secondary-link"
                         type="button"
-                        onClick={() => dismissPrimaryNextAction()}
+                        onClick={() => uiMode === "chat" ? dismissAssistantSuggestedAction(statusCardPrimaryAction) : dismissPrimaryNextAction()}
                       >
                         Dismiss
                       </button>
-                      {secondaryNextActions.map((action) => (
+                      {statusCardSecondaryActions.map((action) => (
                         <button
-                          key={action.key}
+                          key={action.key || action.label}
                           className="chat-chip"
                           type="button"
-                          onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}
+                          onClick={() => uiMode === "chat" ? submitBuilderChatMessage(action.prompt, action.mode || "evolve") : submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}
                         >
                           {action.label}
                         </button>
