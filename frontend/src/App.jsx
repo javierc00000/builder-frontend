@@ -750,6 +750,26 @@ function getNextBestActions({ featureState, layoutState, commandHistory, result 
   }).slice(0, 4);
 }
 
+function simplifyStatusMessage(message, hasProject) {
+  const text = String(message || "").trim();
+  if (!text) return hasProject ? "Your project is ready for the next change." : "Ready to build your app.";
+  if (/mutation engine v2 applied layout, files, routes, and components/i.test(text)) return "Your app was updated successfully.";
+  if (/running mutation engine/i.test(text)) return "Updating your app...";
+  if (/project .* synced with orchestration flow/i.test(text)) return "Your project was refreshed successfully.";
+  if (/builder needs one or two details/i.test(text)) return "I need one or two details before I continue.";
+  if (/builder shared suggestions/i.test(text)) return "I have a suggestion ready for you.";
+  if (/fallback code generation used/i.test(text)) return "I used a backup build path to keep your project moving.";
+  return text;
+}
+
+function simplifyInsightMessage(message, hasProject) {
+  const text = String(message || "").trim();
+  if (!text) return hasProject ? "Tell me the next change you want." : "Describe the app you want to build.";
+  if (/waiting for your next mutation command/i.test(text)) return hasProject ? "Tell me what to change next." : "Describe the app you want to build.";
+  if (/type a command so the builder can mutate the workspace/i.test(text)) return "Describe what you want to build or improve.";
+  return text;
+}
+
 function getActiveAffiliateSuggestions(result) {
   if (!result) return [];
   return AFFILIATE_LIBRARY.filter((item) => item.trigger(result));
@@ -1821,8 +1841,8 @@ export default function App() {
   const [savedResults, setSavedResults] = useState(() => loadFromStorage(STORAGE_KEYS.results, []));
   const [isLoading, setIsLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState("idle");
-  const [statusMessage, setStatusMessage] = useState("Builder ready.");
-  const [builderInsight, setBuilderInsight] = useState("Waiting for your next mutation command.");
+  const [statusMessage, setStatusMessage] = useState("Ready to build your app.");
+  const [builderInsight, setBuilderInsight] = useState("Describe the app you want to build.");
   const [selectedSidebarView, setSelectedSidebarView] = useState("builder");
   const [uiMode, setUiMode] = useState(() => loadFromStorage(STORAGE_KEYS.uiMode, "simple"));
   const [simpleFlowStep, setSimpleFlowStep] = useState(() =>
@@ -2027,6 +2047,8 @@ export default function App() {
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
   );
+  const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
+  const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
     () => generatedCodeFiles.find((file) => file.path === selectedGeneratedFilePath) || generatedCodeFiles[0] || null,
     [generatedCodeFiles, selectedGeneratedFilePath],
@@ -3993,7 +4015,7 @@ export default function App() {
         <div className="brand">
           <span className="eyebrow">Personal AI Builder</span>
           <h1>Real Builder Workspace</h1>
-          <p>Features mutate behavior. Commands now mutate the actual layout too.</p>
+          <p>Describe your app, then keep improving it with simple follow-up requests.</p>
         </div>
         <div className="topbar-actions">
           <div className="mode-toggle">
@@ -4007,10 +4029,10 @@ export default function App() {
           <span className="badge">Layout: {getLayoutLabel(layoutState)}</span>
           <span className="badge">Modules: {activeModules.length}</span>
           <button className="pill primary" onClick={() => runBuilderBrain()}>
-            Run Builder Brain
+            Build App
           </button>
           <button className="ghost-pill" onClick={resetBuilder}>
-            Reset Workspace
+            New App
           </button>
         </div>
       </div>
@@ -5264,9 +5286,9 @@ export default function App() {
             >
               <div className="chat-composer">
                 <div className="chat-chip-row">
-                  <button className={`chat-chip ${chatComposerMode === "evolve" ? "active" : ""}`} onClick={() => setChatComposerMode("evolve")}>Build / Evolve</button>
-                  <button className={`chat-chip ${chatComposerMode === "mutate" ? "active" : ""}`} onClick={() => setChatComposerMode("mutate")}>Mutate current files</button>
-                  {projectId ? <span className="pill chat-project-pill">Project · {projectId}</span> : <span className="pill chat-project-pill">No project yet</span>}
+                  <button className={`chat-chip ${chatComposerMode === "evolve" ? "active" : ""}`} onClick={() => setChatComposerMode("evolve")}>Start or improve app</button>
+                  <button className={`chat-chip ${chatComposerMode === "mutate" ? "active" : ""}`} onClick={() => setChatComposerMode("mutate")}>Improve current app</button>
+                  {projectId ? <span className="pill chat-project-pill">Project started</span> : <span className="pill chat-project-pill">New project</span>}
                 </div>
                 <div className="chat-guidance-grid">
                   <div className="card">
@@ -5275,18 +5297,18 @@ export default function App() {
                   </div>
                   <div className="card">
                     <strong>Stage</strong>
-                    <div className="muted">{projectId ? "Keep improving the same project" : "Start with one clear idea"}</div>
+                    <div className="muted">{projectId ? "Keep improving the same app" : "Start with one clear idea"}</div>
                   </div>
                   <div className="card">
                     <strong>Best prompt style</strong>
-                    <div className="muted">{projectId ? "One short change at a time" : "One sentence describing what you want"}</div>
+                    <div className="muted">{projectId ? "Ask for one change at a time" : "Use one sentence to describe what you want"}</div>
                   </div>
                 </div>
                 <textarea
                   className="input"
                   value={builderChatDraft}
                   onChange={(e) => setBuilderChatDraft(e.target.value)}
-                  placeholder={projectId ? "Example: add billing, improve the dashboard, and keep the auth flow intact" : "Example: build an RV diagnostics app with login, scan history, and a dashboard"}
+                  placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build an RV diagnostics app with login, saved reports, and a dashboard"}
                 />
                 <div className="chat-chip-row">
                   {builderChatQuickIdeas.map((idea) => (
@@ -5351,10 +5373,10 @@ export default function App() {
                 ) : null}
                 <div className="chat-chip-row">
                   <button className="pill primary" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
-                    {isChatSubmitting ? "Working..." : projectId ? "Continue Project" : "Build from Idea"}
+                    {isChatSubmitting ? "Working..." : projectId ? "Continue" : "Build app"}
                   </button>
                   <button className="ghost-pill" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
-                    Quick mutate generated files
+                    Improve current app
                   </button>
                   <button className="ghost-pill" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>Clear chat</button>
                 </div>
@@ -5362,8 +5384,8 @@ export default function App() {
             </Panel>
 
             <Panel
-              title="Conversation"
-              subtitle="Use natural language like Replit-style app building. The same project keeps evolving."
+              title="Chat"
+              subtitle="Talk to the builder in plain language. The same project keeps evolving."
               actions={
                 <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
                   {showChatDetails ? "Hide details" : "Show details"}
@@ -5468,16 +5490,16 @@ export default function App() {
                   </div>
                 )) : (
                   <div className="chat-empty-state">
-                    Start with one idea, then keep sending follow-up improvements like “add auth”, “make it mobile”, or “export for Render”.
+                    Start with one idea, then ask for simple follow-up changes like “add login”, “make it mobile”, or “prepare it for Render”.
                   </div>
                 )}
               </div>
             </Panel>
 
-            <Panel title="Builder status" subtitle="Short update and the next sensible moves.">
+            <Panel title="Next step" subtitle="A short update and the most useful next moves.">
               <div className="chat-status-card">
-                <div className="chat-empty-state">{statusMessage || "Builder ready."}</div>
-                <div className="muted">{builderInsight || "Tell the builder what to change next."}</div>
+                <div className="chat-empty-state">{simpleStatusMessage}</div>
+                <div className="muted">{simpleBuilderInsight}</div>
                 <div className="chat-chip-row">
                   {nextBestActions.slice(0, 3).map((action) => (
                     <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
@@ -5490,7 +5512,7 @@ export default function App() {
           </div>
 
           {showChatDetails ? <div className="chat-side-stack">
-            <Panel title="Live project snapshot" subtitle="This stays in sync with your existing builder systems.">
+            <Panel title="Current project" subtitle="A quick technical summary of the app you are building.">
               <div className="card-grid">
                 <div className="card">
                   <strong>App type</strong>
@@ -5516,7 +5538,7 @@ export default function App() {
               </div>
             </Panel>
 
-            <Panel title="Project memory" subtitle="What the builder currently remembers about this project.">
+            <Panel title="What I remember" subtitle="Saved project details and decisions.">
               <div className="card-grid">
                 <div className="card">
                   <strong>Summary</strong>
@@ -5671,7 +5693,7 @@ export default function App() {
               ) : null}
             </Panel>
 
-            <Panel title="Preview + orchestration" subtitle="Current backend orchestration and generated app preview.">
+            <Panel title="App preview" subtitle="Preview and project generation details.">
               <div className="card-grid">
                 <div className="card">
                   <strong>Project</strong>
@@ -5697,9 +5719,9 @@ export default function App() {
               )}
             </Panel>
 
-            <Panel title="Latest builder response" subtitle="Status, insight, and safe next actions.">
-              <div className="muted" style={{ marginBottom: 10 }}>{statusMessage}</div>
-              <div className="chat-empty-state" style={{ marginBottom: 12 }}>{builderInsight}</div>
+            <Panel title="Detailed status" subtitle="The full builder response and all available follow-up actions.">
+              <div className="muted" style={{ marginBottom: 10 }}>{simpleStatusMessage}</div>
+              <div className="chat-empty-state" style={{ marginBottom: 12 }}>{simpleBuilderInsight}</div>
               <div className="chat-chip-row">
                 {nextBestActions.map((action) => (
                   <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
