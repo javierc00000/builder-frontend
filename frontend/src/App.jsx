@@ -2139,20 +2139,28 @@ export default function App() {
   const secondaryNextActions = showLocalNextActions ? nextBestActions.slice(1, 3) : [];
   const latestAssistantLeadAction = useMemo(() => {
     const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
-    for (const item of builderChatHistory) {
-      if (item.role !== "assistant" || !Array.isArray(item.actions) || !item.actions.length) continue;
-      const visibleActions = item.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
-      if (visibleActions.length) {
-        return {
-          lead: visibleActions[0],
-          extras: visibleActions.slice(1, 3),
-        };
-      }
+    const latestAssistantMessage = builderChatHistory.find((item) => item.role === "assistant") || null;
+    if (!latestAssistantMessage || !Array.isArray(latestAssistantMessage.actions) || !latestAssistantMessage.actions.length) {
+      return { lead: null, extras: [] };
     }
-    return { lead: null, extras: [] };
+    const visibleActions = latestAssistantMessage.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
+    if (!visibleActions.length) {
+      return { lead: null, extras: [] };
+    }
+    return {
+      lead: visibleActions[0],
+      extras: visibleActions.slice(1, 3),
+    };
   }, [builderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
   const statusCardPrimaryAction = uiMode === "chat" ? latestAssistantLeadAction.lead : primaryNextAction;
   const statusCardSecondaryActions = uiMode === "chat" ? latestAssistantLeadAction.extras : secondaryNextActions;
+  const currentChatFocusLabel = useMemo(() => {
+    const lastBuilderRequest = String(builderProjectMemory.last_builder_workspace_request || "").trim();
+    if (lastBuilderRequest) {
+      return "builder ui";
+    }
+    return builderProjectMemory.app_type || featureState.appType || "New app";
+  }, [builderProjectMemory.last_builder_workspace_request, builderProjectMemory.app_type, featureState.appType]);
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
@@ -2818,7 +2826,14 @@ export default function App() {
           ...prev,
           builder_summary: "This chat can help improve the builder UI as well as generated apps.",
           last_builder_workspace_request: message,
+          dismissed_assistant_action_id: "",
+          accepted_assistant_action_id: "",
+          accepted_assistant_action_label: "",
         }));
+        setStatusMessage("Builder UI updated.");
+        setBuilderInsight(workspaceSummary?.notes?.length
+          ? workspaceSummary.notes.join(" ")
+          : "The builder layout was updated for your request.");
         return;
       }
 
@@ -5819,7 +5834,7 @@ export default function App() {
                   <div className="chat-guidance-strip">
                     <div className="chat-guidance-tile">
                       <strong>Current focus</strong>
-                      <div>{builderProjectMemory.app_type || featureState.appType || "New app"}</div>
+                      <div>{currentChatFocusLabel}</div>
                     </div>
                     <div className="chat-guidance-tile">
                       <strong>Best prompt</strong>
