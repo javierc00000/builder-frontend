@@ -2626,10 +2626,18 @@ export default function App() {
     const nextComponents = extractOrchestratedComponents(payload, fallbackContext.components || generatedComponents || []);
     const nextFileTree = extractOrchestratedFileTree(payload, fallbackContext.fileTree || generatedFileTree || []);
     const rawFiles = extractOrchestratedFiles(payload);
+    const resolvedAppType = payload?.app_type || fallbackContext.appType || featureState.appType;
+    const resolvedBuilderMode = payload?.builder_mode || fallbackContext.builderMode || featureState.builderMode;
+    const nextLayout = payload?.layout_changes || payload?.project_state?.layout || layoutState;
+    const nextModules = Array.isArray(payload?.module_changes?.enable) && payload.module_changes.enable.length
+      ? payload.module_changes.enable
+      : Array.isArray(payload?.project_state?.modules) && payload.project_state.modules.length
+        ? payload.project_state.modules
+        : activeModules;
     const files = augmentGeneratedFilesWithSmartPackage(rawFiles, {
       prompt: fallbackContext.prompt || payload?.prompt || prompt,
-      appType: payload?.app_type || fallbackContext.appType || featureState.appType,
-      builderMode: payload?.builder_mode || fallbackContext.builderMode || featureState.builderMode,
+      appType: resolvedAppType,
+      builderMode: resolvedBuilderMode,
       routes: nextRoutes,
       components: nextComponents,
     });
@@ -2647,12 +2655,38 @@ export default function App() {
       ].slice(0, 12));
     }
 
+    setLayoutState(nextLayout);
+    setActiveModules((prev) => [...new Set([...(Array.isArray(prev) ? prev : []), ...(Array.isArray(nextModules) ? nextModules : [])])]);
+    setFeatureState((prev) => ({
+      ...prev,
+      appType: resolvedAppType,
+      builderMode: resolvedBuilderMode,
+      quickIdea: fallbackContext.prompt || payload?.prompt || prev.quickIdea,
+    }));
     setGeneratedFileTree(nextFileTree);
     setGeneratedRoutes(nextRoutes);
     setGeneratedComponents(nextComponents);
     setGeneratedCodeFiles(files);
     setSelectedGeneratedFilePath(files[0]?.path || "");
     setGeneratedAppMonetization(payload?.monetization || null);
+    setSystemPlanner((previous) => inferSystemPlanner({
+      prompt: fallbackContext.prompt || payload?.prompt || prompt,
+      appType: resolvedAppType,
+      builderMode: resolvedBuilderMode,
+      routes: nextRoutes,
+      components: nextComponents,
+      featureState: {
+        ...featureState,
+        appType: resolvedAppType,
+        builderMode: resolvedBuilderMode,
+        quickIdea: fallbackContext.prompt || payload?.prompt || featureState.quickIdea,
+      },
+      previousPlanner: {
+        ...(previous || {}),
+        systems: payload?.project_memory?.systems || previous?.systems || [],
+        complexity: payload?.complexity || previous?.complexity,
+      },
+    }));
     if (payload?.project_memory) {
       setBuilderProjectMemory(payload.project_memory);
     }
