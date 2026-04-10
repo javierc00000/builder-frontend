@@ -643,10 +643,10 @@ function getNextBestActions({ featureState, layoutState, commandHistory, result 
 
   if (!layoutState.split) {
 
-  function getActionIdentity(action) {
-    if (!action) return "";
-    return [action.key || "", action.cmd || "", action.label || ""].join("::");
-  }
+    function getActionIdentity(action) {
+      if (!action) return "";
+      return [action.key || "", action.cmd || "", action.label || ""].join("::");
+    }
     actionPool.push({
       key: "split",
       label: "Split layout",
@@ -5778,7 +5778,7 @@ export default function App() {
                         ? "Builder AI is active. Go improves this builder."
                         : chatAssistantMode === "fullstack"
                           ? "Full-stack AI is active. Go targets frontend and backend together."
-                          : (projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version."))}
+                          : (projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version.")}
                     </span>
                     <div className="chat-chip-row compact">
                       <button
