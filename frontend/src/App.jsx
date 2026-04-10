@@ -26,6 +26,12 @@ const STORAGE_KEYS = {
   chatReplyPreference: "builder_chat_reply_preference_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
+  generatedAppMonetization: "builder_generated_app_monetization_v1",
+  generatedFileTree: "builder_generated_file_tree_v1",
+  generatedRoutes: "builder_generated_routes_v1",
+  generatedComponents: "builder_generated_components_v1",
+  generatedCodeFiles: "builder_generated_code_files_v1",
+  selectedGeneratedFilePath: "builder_selected_generated_file_path_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -1903,16 +1909,16 @@ export default function App() {
   });
   const [selectedRvTemplateKey, setSelectedRvTemplateKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvTemplate, RV_SMART_TEMPLATES[0].key));
   const [rvCampingProfileKey, setRvCampingProfileKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvCampingProfile, RV_CAMPING_PROFILES[0].key));
-  const [generatedAppMonetization, setGeneratedAppMonetization] = useState(null);
+  const [generatedAppMonetization, setGeneratedAppMonetization] = useState(() => loadFromStorage(STORAGE_KEYS.generatedAppMonetization, null));
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
-  const [generatedFileTree, setGeneratedFileTree] = useState([]);
-  const [generatedRoutes, setGeneratedRoutes] = useState([]);
-  const [generatedComponents, setGeneratedComponents] = useState([]);
+  const [generatedFileTree, setGeneratedFileTree] = useState(() => loadFromStorage(STORAGE_KEYS.generatedFileTree, []));
+  const [generatedRoutes, setGeneratedRoutes] = useState(() => loadFromStorage(STORAGE_KEYS.generatedRoutes, []));
+  const [generatedComponents, setGeneratedComponents] = useState(() => loadFromStorage(STORAGE_KEYS.generatedComponents, []));
   const [backendNextActions, setBackendNextActions] = useState([]);
   const [backendMutationSummary, setBackendMutationSummary] = useState([]);
-  const [generatedCodeFiles, setGeneratedCodeFiles] = useState([]);
-  const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState("");
+  const [generatedCodeFiles, setGeneratedCodeFiles] = useState(() => loadFromStorage(STORAGE_KEYS.generatedCodeFiles, []));
+  const [selectedGeneratedFilePath, setSelectedGeneratedFilePath] = useState(() => loadFromStorage(STORAGE_KEYS.selectedGeneratedFilePath, ""));
   const [livePreviewDoc, setLivePreviewDoc] = useState("");
   const [selectedPreviewRoute, setSelectedPreviewRoute] = useState("/");
   const [previewAuthMode, setPreviewAuthMode] = useState("guest");
@@ -1972,6 +1978,12 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvTemplate, selectedRvTemplateKey), [selectedRvTemplateKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvCampingProfile, rvCampingProfileKey), [rvCampingProfileKey]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedAppMonetization, generatedAppMonetization), [generatedAppMonetization]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedFileTree, generatedFileTree), [generatedFileTree]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedRoutes, generatedRoutes), [generatedRoutes]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedComponents, generatedComponents), [generatedComponents]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.generatedCodeFiles, generatedCodeFiles), [generatedCodeFiles]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.selectedGeneratedFilePath, selectedGeneratedFilePath), [selectedGeneratedFilePath]);
   useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
   useEffect(() => saveToStorage(STORAGE_KEYS.orchestrationHistory, orchestrationHistory), [orchestrationHistory]);
   useEffect(() => saveToStorage(STORAGE_KEYS.builderChatHistory, builderChatHistory), [builderChatHistory]);
@@ -5967,19 +5979,19 @@ export default function App() {
                       <div className="chat-advice-stack">
                         {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
                           <div key={`upgrade_${item.label}`} className="chat-advice-card">
-                            <strong>Good next step: {item.label}</strong>
+                            <strong>Good idea: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
                         {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
                           <div key={`caution_${item.label}`} className="chat-advice-card">
-                            <strong>Watch out: {item.label}</strong>
+                            <strong>Possible problem: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
                         {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
                           <div key={`better_${item.label}`} className="chat-advice-card">
-                            <strong>Simpler option: {item.label}</strong>
+                            <strong>Better idea: {item.label}</strong>
                             <div className="muted">{item.reason}</div>
                           </div>
                         )) : null}
@@ -6206,19 +6218,19 @@ export default function App() {
                     <div className="module-list" style={{ marginTop: 12 }}>
                       {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.slice(0, 1).map((item) => (
                         <div key={`memory_upgrade_${item.label}`} className="module-item">
-                          <strong>Good next step: {item.label}</strong>
+                          <strong>Good idea: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
                       {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.slice(0, 1).map((item) => (
                         <div key={`memory_caution_${item.label}`} className="module-item">
-                          <strong>Watch out: {item.label}</strong>
+                          <strong>Possible problem: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
                       {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.slice(0, 1).map((item) => (
                         <div key={`memory_better_${item.label}`} className="module-item">
-                          <strong>Simpler option: {item.label}</strong>
+                          <strong>Better idea: {item.label}</strong>
                           <div className="muted">{item.reason}</div>
                         </div>
                       )) : null}
