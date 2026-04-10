@@ -1893,9 +1893,8 @@ export default function App() {
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [chatScrollTick, setChatScrollTick] = useState(0);
-  const [chatComposerMode, setChatComposerMode] = useState("evolve");
   const [showChatDetails, setShowChatDetails] = useState(false);
-  const [showRvStarterIdeas, setShowRvStarterIdeas] = useState(false);
+  const [showStarterExamples, setShowStarterExamples] = useState(false);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [deployExportTarget, setDeployExportTarget] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
@@ -2095,16 +2094,22 @@ export default function App() {
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
-    selectedRvTemplate.prompt,
-    "Add dark mode and sidebar",
+    "Build a booking app for a small business",
+    "Create a client portal with login and invoices",
+    "Make a mobile-friendly dashboard for team tasks",
     "Add login and saved data",
-    "Make it mobile friendly",
     "Export this app for Render",
-  ], [projectId, selectedRvTemplate]);
+  ], [projectId]);
   const visibleChatQuickIdeas = useMemo(
     () => builderChatQuickIdeas.slice(0, projectId ? 3 : 4),
     [builderChatQuickIdeas, projectId],
   );
+  const generalStarterExamples = useMemo(() => [
+    { label: "Client portal", prompt: "build a client portal with login, invoices, messages, and a simple dashboard" },
+    { label: "Booking app", prompt: "build a booking app for a local business with calendar, reminders, and admin view" },
+    { label: "Team dashboard", prompt: "build a team dashboard with tasks, activity feed, and saved reports" },
+    { label: "Content workspace", prompt: "build a content workspace with drafts, approval flow, and publishing calendar" },
+  ], []);
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -2514,7 +2519,7 @@ export default function App() {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
 
-    const resolvedMode = modeOverride || chatComposerMode;
+    const resolvedMode = modeOverride || (projectId ? "mutate" : "evolve");
     appendBuilderChatMessage({
       role: "user",
       text: message,
@@ -3984,7 +3989,8 @@ export default function App() {
           .simple-starter-grid { grid-template-columns: 1fr; }
         }
 
-        .chat-builder-shell { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; margin-bottom: 18px; }
+        .chat-builder-shell { display: grid; grid-template-columns: .9fr 1.1fr; gap: 20px; margin-bottom: 18px; align-items: start; }
+        .chat-builder-shell.with-preview { grid-template-columns: minmax(320px, .78fr) minmax(560px, 1.22fr); }
         .chat-builder-shell.compact { grid-template-columns: minmax(0, 1fr); }
         .chat-thread { display: grid; gap: 12px; max-height: 860px; overflow: auto; padding-right: 6px; }
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
@@ -4004,7 +4010,7 @@ export default function App() {
           color: var(--muted);
           font-size: 13px;
         }
-        .chat-composer { display: grid; gap: 14px; }
+        .chat-composer { display: grid; gap: 12px; }
         .chat-composer-shell {
           display: grid;
           gap: 16px;
@@ -4086,7 +4092,17 @@ export default function App() {
           text-decoration: underline;
           text-underline-offset: 3px;
         }
-        .chat-side-stack { display: grid; gap: 18px; }
+        .chat-side-stack { display: grid; gap: 16px; }
+        .chat-preview-rail { display: grid; gap: 18px; position: sticky; top: 18px; }
+        .chat-preview-frame {
+          width: 100%;
+          min-height: 680px;
+          border: 1px solid rgba(148,163,184,.14);
+          border-radius: 18px;
+          background: #07111f;
+        }
+        .chat-preview-meta { display: grid; gap: 12px; }
+        .chat-preview-meta .card-grid { grid-template-columns: 1fr 1fr; }
         .chat-empty-state { border: 1px dashed rgba(148,163,184,.18); border-radius: 18px; padding: 18px; color: var(--muted); }
         .chat-project-pill { display: inline-flex; align-items: center; gap: 8px; }
         .chat-guidance-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
@@ -4101,7 +4117,11 @@ export default function App() {
         }
         .chat-primary-next strong { font-size: 18px; }
         .chat-next-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-        @media (max-width: 1120px) { .chat-builder-shell { grid-template-columns: 1fr; } }
+        @media (max-width: 1120px) {
+          .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
+          .chat-preview-rail { position: static; }
+          .chat-preview-frame { min-height: 420px; }
+        }
       `}</style>
 
       <div className="topbar">
@@ -5366,14 +5386,14 @@ export default function App() {
           </div>
         </>
       ) : uiMode === "chat" ? (
-        <div className={`chat-builder-shell ${showChatDetails ? "" : "compact"}`}>
+        <div className={`chat-builder-shell ${livePreviewDoc ? "with-preview" : "compact"}`}>
           <div className="chat-side-stack">
             <Panel
-              title="Chat Builder"
-              subtitle="Describe the app once, then keep evolving the same project with follow-up ideas."
+              title="Build With Chat"
+              subtitle="Type what you want, press Go, and keep improving the same project from the same chat."
               actions={
                 <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
-                  {showChatDetails ? "Hide details" : "Show details"}
+                  {showChatDetails ? "Hide project details" : "Project details"}
                 </button>
               }
             >
@@ -5381,14 +5401,10 @@ export default function App() {
                 <div className="chat-composer-shell">
                   <div className="chat-composer-header">
                     <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
-                    <p>{projectId ? "Keep the same project moving with one clear request at a time." : "Start with one plain-language sentence. The builder will ask follow-up questions if anything is missing."}</p>
+                    <p>{projectId ? "Keep the same project moving with one clear request at a time, then press Go." : "Start with one plain-language sentence, then press Go. The builder will ask follow-up questions if anything is missing."}</p>
                   </div>
                   <div className="chat-mode-row">
-                    <div className="chat-mode-toggle">
-                      <button className={`chat-mode-button ${chatComposerMode === "evolve" ? "active" : ""}`} type="button" onClick={() => setChatComposerMode("evolve")}>Start or improve app</button>
-                      <button className={`chat-mode-button ${chatComposerMode === "mutate" ? "active" : ""}`} type="button" onClick={() => setChatComposerMode("mutate")}>Improve current app</button>
-                    </div>
-                    <span className="chat-project-state">{projectId ? "Project started" : "New project"}</span>
+                    <span className="chat-project-state">{projectId ? "Project started. Go keeps improving the same app." : "New project. Go starts the first version."}</span>
                   </div>
                   <div className="chat-guidance-strip">
                     <div className="chat-guidance-tile">
@@ -5404,7 +5420,7 @@ export default function App() {
                     className="input"
                     value={builderChatDraft}
                     onChange={(e) => setBuilderChatDraft(e.target.value)}
-                    placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build an RV diagnostics app with login, saved reports, and a dashboard"}
+                    placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build a client portal with login, saved reports, and a dashboard"}
                   />
                   <div className="chat-quick-ideas">
                     <div className="muted">Quick starts</div>
@@ -5416,64 +5432,37 @@ export default function App() {
                   </div>
                   <div className="chat-composer-actions">
                     <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
-                      {isChatSubmitting ? "Working..." : projectId ? "Continue" : "Build app"}
+                      {isChatSubmitting ? "Working..." : "Go"}
                     </button>
-                    <button className="ghost-pill" type="button" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
-                      Improve current app
-                    </button>
-                    <button className="chat-secondary-link" type="button" onClick={() => setShowRvStarterIdeas((prev) => !prev)}>
-                      {showRvStarterIdeas ? "Hide RV starter ideas" : "Show RV starter ideas"}
+                    <button className="chat-secondary-link" type="button" onClick={() => setShowStarterExamples((prev) => !prev)}>
+                      {showStarterExamples ? "Hide examples" : "More examples"}
                     </button>
                     <button className="chat-secondary-link" type="button" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>
                       Clear chat
                     </button>
                   </div>
                 </div>
-                {showRvStarterIdeas ? (
+                {showStarterExamples ? (
                   <div className="module-list" style={{ marginTop: 12 }}>
                     <div className="module-item">
                       <div className="module-top">
-                        <strong>RV Smart Templates</strong>
-                        <span className="tag">Niche mode</span>
+                        <strong>Starter examples</strong>
+                        <span className="tag">Optional</span>
                       </div>
                       <div className="chat-chip-row">
-                        {RV_SMART_TEMPLATES.map((template) => (
+                        {generalStarterExamples.map((example) => (
                           <button
-                            key={template.key}
-                            className={`chat-chip ${selectedRvTemplateKey === template.key ? "active" : ""}`}
+                            key={example.label}
+                            className="chat-chip"
                             type="button"
-                            onClick={() => applyRvSmartTemplate(template.key)}
+                            onClick={() => setBuilderChatDraft(example.prompt)}
                           >
-                            {template.label}
+                            {example.label}
                           </button>
                         ))}
                       </div>
                       <div className="muted" style={{ marginTop: 10 }}>
-                        {selectedRvTemplate.description}
-                      </div>
-                      <div className="zone-chip-row" style={{ marginTop: 10 }}>
-                        <span className="zone-chip">{rvCampingProfile.label}</span>
-                        <span className="zone-chip">{rvIntelligence.batteryAh}Ah</span>
-                        <span className="zone-chip">{rvIntelligence.solarWatts}W</span>
-                      </div>
-                      <label className="simple-field" style={{ marginTop: 10 }}>
-                        <span>Camping profile</span>
-                        <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
-                          {RV_CAMPING_PROFILES.map((profile) => (
-                            <option key={profile.key} value={profile.key}>{profile.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="module-list" style={{ marginTop: 12 }}>
-                        {rvAffiliateRecommendations.slice(0, 3).map((item) => (
-                          <div key={item.key} className="module-item">
-                            <div className="module-top">
-                              <strong>{item.title}</strong>
-                              <span className="tag">{item.cta}</span>
-                            </div>
-                            <div className="muted">{item.fit}</div>
-                          </div>
-                        ))}
+                        Pick one example to fill the chat box, then press Go.
                       </div>
                     </div>
                   </div>
@@ -5482,13 +5471,8 @@ export default function App() {
             </Panel>
 
             <Panel
-              title="Chat"
-              subtitle="Talk to the builder in plain language. The same project keeps evolving."
-              actions={
-                <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
-                  {showChatDetails ? "Hide details" : "Show details"}
-                </button>
-              }
+              title="Conversation"
+              subtitle="Keep building in the same chat."
             >
               <div className="chat-thread" key={chatScrollTick}>
                 {builderChatHistory.length ? builderChatHistory.map((message) => (
@@ -5594,7 +5578,7 @@ export default function App() {
               </div>
             </Panel>
 
-            <Panel title="Next step" subtitle="A short update and the most useful next moves.">
+            <Panel title="Builder update" subtitle="The current status and the best next move.">
               <div className="chat-status-card">
                 <div className="chat-empty-state">{simpleStatusMessage}</div>
                 <div className="muted">{simpleBuilderInsight}</div>
@@ -5627,228 +5611,240 @@ export default function App() {
                 ) : null}
               </div>
             </Panel>
+
+            {showChatDetails ? <Panel title="Project details" subtitle="Technical project info and saved builder memory.">
+              <div className="chat-side-stack">
+                <Panel title="Current project" subtitle="A quick technical summary of the app you are building.">
+                  <div className="card-grid">
+                    <div className="card">
+                      <strong>App type</strong>
+                      <div className="muted">{featureState.appType}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Builder mode</strong>
+                      <div className="muted">{featureState.builderMode}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Files</strong>
+                      <div className="muted">{generatedCodeFiles.length}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Systems</strong>
+                      <div className="muted">{(systemPlanner.systems || []).length}</div>
+                    </div>
+                  </div>
+                  <div className="zone-chip-row" style={{ marginTop: 14 }}>
+                    {(systemPlanner.systems || []).map((system) => (
+                      <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
+                    ))}
+                  </div>
+                </Panel>
+
+                <Panel title="What I remember" subtitle="Saved project details and decisions.">
+                  <div className="card-grid">
+                    <div className="card">
+                      <strong>Summary</strong>
+                      <div className="muted">{builderProjectMemory.project_summary || "No project summary yet"}</div>
+                    </div>
+                    <div className="card">
+                      <strong>App type</strong>
+                      <div className="muted">{builderProjectMemory.app_type || featureState.appType}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Mode</strong>
+                      <div className="muted">{builderProjectMemory.builder_mode || featureState.builderMode}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Project state</strong>
+                      <div className="muted">{builderProjectMemory.has_generated_app ? "Generated app in progress" : "Planning stage"}</div>
+                    </div>
+                    <div className="card">
+                      <strong>Global knowledge</strong>
+                      <div className="muted">{builderProjectMemory.global_knowledge_count || 0} learned items</div>
+                    </div>
+                  </div>
+                  {globalKnowledgeTopics.length ? (
+                    <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                      {globalKnowledgeTopics.map((topic) => (
+                        <span key={topic} className="zone-chip">Knowledge topic · {topic}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="zone-chip-row" style={{ marginTop: 14 }}>
+                    {Array.isArray(builderProjectMemory.systems) && builderProjectMemory.systems.length
+                      ? builderProjectMemory.systems.map((system) => (
+                        <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
+                      ))
+                      : <span className="zone-chip">No systems locked yet</span>}
+                  </div>
+                  {builderProjectMemory.decisions ? (
+                    <div className="zone-chip-row" style={{ marginTop: 12 }}>
+                      {typeof builderProjectMemory.decisions.auth_required === "boolean" ? (
+                        <span className="zone-chip">{builderProjectMemory.decisions.auth_required ? "Login required" : "Open access"}</span>
+                      ) : null}
+                      {typeof builderProjectMemory.decisions.billing_enabled === "boolean" ? (
+                        <span className="zone-chip">{builderProjectMemory.decisions.billing_enabled ? "Billing enabled" : "No billing"}</span>
+                      ) : null}
+                      {builderProjectMemory.decisions.product_shape ? (
+                        <span className="zone-chip">Shape · {builderProjectMemory.decisions.product_shape}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {Array.isArray(builderProjectMemory.unresolved_questions) && builderProjectMemory.unresolved_questions.length ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {builderProjectMemory.unresolved_questions.map((question) => (
+                        <div key={question} className="module-item">
+                          <strong>Waiting on</strong>
+                          <div className="muted">{question}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {builderProjectMemory.advice ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.map((item) => (
+                        <div key={`memory_upgrade_${item.label}`} className="module-item">
+                          <strong>Upgrade: {item.label}</strong>
+                          <div className="muted">{item.reason}</div>
+                        </div>
+                      )) : null}
+                      {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.map((item) => (
+                        <div key={`memory_caution_${item.label}`} className="module-item">
+                          <strong>Caution: {item.label}</strong>
+                          <div className="muted">{item.reason}</div>
+                        </div>
+                      )) : null}
+                      {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.map((item) => (
+                        <div key={`memory_better_${item.label}`} className="module-item">
+                          <strong>Better option: {item.label}</strong>
+                          <div className="muted">{item.reason}</div>
+                        </div>
+                      )) : null}
+                    </div>
+                  ) : null}
+                  {Array.isArray(builderProjectMemory.latest_research?.findings) && builderProjectMemory.latest_research.findings.length ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {builderProjectMemory.latest_research.findings.slice(0, 4).map((item) => (
+                        <a
+                          key={`memory_research_${item.url || item.title}`}
+                          className="module-item"
+                          href={item.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <strong>Research: {item.title}</strong>
+                          <div className="muted">{item.snippet || "Source found for this topic."}</div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                  {builderProjectMemory.research_recommendation?.prompt ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      <div className="module-item">
+                        <strong>Research recommendation: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>
+                        <div className="muted">{builderProjectMemory.research_recommendation.reason || "Ready to apply from saved research."}</div>
+                        <div className="muted" style={{ marginTop: 8 }}>{builderProjectMemory.research_recommendation.explanation || "The builder chose this because it best fits the saved research and current project state."}</div>
+                        <button
+                          className="chat-chip"
+                          type="button"
+                          style={{ marginTop: 10 }}
+                          onClick={() => submitBuilderChatMessage(builderProjectMemory.research_recommendation.prompt, builderProjectMemory.research_recommendation.mode || "evolve")}
+                        >
+                          Apply researched recommendation
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {Array.isArray(builderProjectMemory.knowledge_items) && builderProjectMemory.knowledge_items.length ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {builderProjectMemory.knowledge_items.slice(0, 6).map((item) => (
+                        <a
+                          key={`knowledge_bank_${item.url || item.title}`}
+                          className="module-item"
+                          href={item.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <strong>Knowledge: {item.title}</strong>
+                          <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                  {isKnowledgeLoading ? (
+                    <div className="chat-empty-state" style={{ marginTop: 12 }}>Refreshing learned knowledge…</div>
+                  ) : null}
+                  {globalKnowledgeItems.length ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      {globalKnowledgeItems.map((item) => (
+                        <a
+                          key={`global_knowledge_${item.url || item.title}`}
+                          className="module-item"
+                          href={item.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <strong>Global: {item.title}</strong>
+                          <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            Score {Math.round(item.score || 0)} · Used {item.use_count || 0} times · Sources {item.source_count || 1}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </Panel>
+
+                <Panel title="Detailed status" subtitle="The full builder response and all available follow-up actions.">
+                  <div className="muted" style={{ marginBottom: 10 }}>{simpleStatusMessage}</div>
+                  <div className="chat-empty-state" style={{ marginBottom: 12 }}>{simpleBuilderInsight}</div>
+                  <div className="chat-chip-row">
+                    {nextBestActions.map((action) => (
+                      <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </Panel>
+              </div>
+            </Panel> : null}
           </div>
 
-          {showChatDetails ? <div className="chat-side-stack">
-            <Panel title="Current project" subtitle="A quick technical summary of the app you are building.">
-              <div className="card-grid">
-                <div className="card">
-                  <strong>App type</strong>
-                  <div className="muted">{featureState.appType}</div>
-                </div>
-                <div className="card">
-                  <strong>Builder mode</strong>
-                  <div className="muted">{featureState.builderMode}</div>
-                </div>
-                <div className="card">
-                  <strong>Files</strong>
-                  <div className="muted">{generatedCodeFiles.length}</div>
-                </div>
-                <div className="card">
-                  <strong>Systems</strong>
-                  <div className="muted">{(systemPlanner.systems || []).length}</div>
-                </div>
-              </div>
-              <div className="zone-chip-row" style={{ marginTop: 14 }}>
-                {(systemPlanner.systems || []).map((system) => (
-                  <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
-                ))}
-              </div>
-            </Panel>
-
-            <Panel title="What I remember" subtitle="Saved project details and decisions.">
-              <div className="card-grid">
-                <div className="card">
-                  <strong>Summary</strong>
-                  <div className="muted">{builderProjectMemory.project_summary || "No project summary yet"}</div>
-                </div>
-                <div className="card">
-                  <strong>App type</strong>
-                  <div className="muted">{builderProjectMemory.app_type || featureState.appType}</div>
-                </div>
-                <div className="card">
-                  <strong>Mode</strong>
-                  <div className="muted">{builderProjectMemory.builder_mode || featureState.builderMode}</div>
-                </div>
-                <div className="card">
-                  <strong>Project state</strong>
-                  <div className="muted">{builderProjectMemory.has_generated_app ? "Generated app in progress" : "Planning stage"}</div>
-                </div>
-                <div className="card">
-                  <strong>Global knowledge</strong>
-                  <div className="muted">{builderProjectMemory.global_knowledge_count || 0} learned items</div>
-                </div>
-              </div>
-              {globalKnowledgeTopics.length ? (
-                <div className="zone-chip-row" style={{ marginTop: 12 }}>
-                  {globalKnowledgeTopics.map((topic) => (
-                    <span key={topic} className="zone-chip">Knowledge topic · {topic}</span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="zone-chip-row" style={{ marginTop: 14 }}>
-                {Array.isArray(builderProjectMemory.systems) && builderProjectMemory.systems.length
-                  ? builderProjectMemory.systems.map((system) => (
-                    <span key={system} className="zone-chip">{formatSystemLabel(system)}</span>
-                  ))
-                  : <span className="zone-chip">No systems locked yet</span>}
-              </div>
-              {builderProjectMemory.decisions ? (
-                <div className="zone-chip-row" style={{ marginTop: 12 }}>
-                  {typeof builderProjectMemory.decisions.auth_required === "boolean" ? (
-                    <span className="zone-chip">{builderProjectMemory.decisions.auth_required ? "Login required" : "Open access"}</span>
-                  ) : null}
-                  {typeof builderProjectMemory.decisions.billing_enabled === "boolean" ? (
-                    <span className="zone-chip">{builderProjectMemory.decisions.billing_enabled ? "Billing enabled" : "No billing"}</span>
-                  ) : null}
-                  {builderProjectMemory.decisions.product_shape ? (
-                    <span className="zone-chip">Shape · {builderProjectMemory.decisions.product_shape}</span>
-                  ) : null}
-                </div>
-              ) : null}
-              {Array.isArray(builderProjectMemory.unresolved_questions) && builderProjectMemory.unresolved_questions.length ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  {builderProjectMemory.unresolved_questions.map((question) => (
-                    <div key={question} className="module-item">
-                      <strong>Waiting on</strong>
-                      <div className="muted">{question}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {builderProjectMemory.advice ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  {Array.isArray(builderProjectMemory.advice.upgrades) ? builderProjectMemory.advice.upgrades.map((item) => (
-                    <div key={`memory_upgrade_${item.label}`} className="module-item">
-                      <strong>Upgrade: {item.label}</strong>
-                      <div className="muted">{item.reason}</div>
-                    </div>
-                  )) : null}
-                  {Array.isArray(builderProjectMemory.advice.cautions) ? builderProjectMemory.advice.cautions.map((item) => (
-                    <div key={`memory_caution_${item.label}`} className="module-item">
-                      <strong>Caution: {item.label}</strong>
-                      <div className="muted">{item.reason}</div>
-                    </div>
-                  )) : null}
-                  {Array.isArray(builderProjectMemory.advice.better_options) ? builderProjectMemory.advice.better_options.map((item) => (
-                    <div key={`memory_better_${item.label}`} className="module-item">
-                      <strong>Better option: {item.label}</strong>
-                      <div className="muted">{item.reason}</div>
-                    </div>
-                  )) : null}
-                </div>
-              ) : null}
-              {Array.isArray(builderProjectMemory.latest_research?.findings) && builderProjectMemory.latest_research.findings.length ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  {builderProjectMemory.latest_research.findings.slice(0, 4).map((item) => (
-                    <a
-                      key={`memory_research_${item.url || item.title}`}
-                      className="module-item"
-                      href={item.url || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <strong>Research: {item.title}</strong>
-                      <div className="muted">{item.snippet || "Source found for this topic."}</div>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-              {builderProjectMemory.research_recommendation?.prompt ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  <div className="module-item">
-                    <strong>Research recommendation: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>
-                    <div className="muted">{builderProjectMemory.research_recommendation.reason || "Ready to apply from saved research."}</div>
-                    <div className="muted" style={{ marginTop: 8 }}>{builderProjectMemory.research_recommendation.explanation || "The builder chose this because it best fits the saved research and current project state."}</div>
-                    <button
-                      className="chat-chip"
-                      type="button"
-                      style={{ marginTop: 10 }}
-                      onClick={() => submitBuilderChatMessage(builderProjectMemory.research_recommendation.prompt, builderProjectMemory.research_recommendation.mode || "evolve")}
-                    >
-                      Apply researched recommendation
-                    </button>
+          <div className="chat-preview-rail">
+            <Panel title="Live preview" subtitle="See the app while you chat.">
+              <div className="chat-preview-meta">
+                <div className="card-grid">
+                  <div className="card">
+                    <strong>Project</strong>
+                    <div className="muted">{projectId || "Not created yet"}</div>
+                  </div>
+                  <div className="card">
+                    <strong>Last update</strong>
+                    <div className="muted">{latestOrchestrationEntry?.time || "Waiting"}</div>
                   </div>
                 </div>
-              ) : null}
-              {Array.isArray(builderProjectMemory.knowledge_items) && builderProjectMemory.knowledge_items.length ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  {builderProjectMemory.knowledge_items.slice(0, 6).map((item) => (
-                    <a
-                      key={`knowledge_bank_${item.url || item.title}`}
-                      className="module-item"
-                      href={item.url || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <strong>Knowledge: {item.title}</strong>
-                      <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-              {isKnowledgeLoading ? (
-                <div className="chat-empty-state" style={{ marginTop: 12 }}>Refreshing learned knowledge…</div>
-              ) : null}
-              {globalKnowledgeItems.length ? (
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  {globalKnowledgeItems.map((item) => (
-                    <a
-                      key={`global_knowledge_${item.url || item.title}`}
-                      className="module-item"
-                      href={item.url || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <strong>Global: {item.title}</strong>
-                      <div className="muted">{item.summary || item.topic || "Saved research insight."}</div>
-                      <div className="muted" style={{ marginTop: 6 }}>
-                        Score {Math.round(item.score || 0)} · Used {item.use_count || 0} times · Sources {item.source_count || 1}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-            </Panel>
-
-            <Panel title="App preview" subtitle="Preview and project generation details.">
-              <div className="card-grid">
-                <div className="card">
-                  <strong>Project</strong>
-                  <div className="muted">{projectId || "Not created yet"}</div>
-                </div>
-                <div className="card">
-                  <strong>Last orchestration</strong>
-                  <div className="muted">{latestOrchestrationEntry?.time || "Waiting"}</div>
-                </div>
-                <div className="card">
-                  <strong>Routes</strong>
-                  <div className="muted">{generatedRoutes.length}</div>
-                </div>
-                <div className="card">
-                  <strong>Components</strong>
-                  <div className="muted">{generatedComponents.length}</div>
-                </div>
-              </div>
-              {livePreviewDoc ? (
-                <iframe title="Chat Builder Preview" srcDoc={livePreviewDoc} style={{ width: "100%", minHeight: 420, border: "1px solid rgba(148,163,184,.14)", borderRadius: 18, marginTop: 14, background: "#07111f" }} />
-              ) : (
-                <div className="chat-empty-state" style={{ marginTop: 14 }}>Generate the first app version to see the live preview here.</div>
-              )}
-            </Panel>
-
-            <Panel title="Detailed status" subtitle="The full builder response and all available follow-up actions.">
-              <div className="muted" style={{ marginBottom: 10 }}>{simpleStatusMessage}</div>
-              <div className="chat-empty-state" style={{ marginBottom: 12 }}>{simpleBuilderInsight}</div>
-              <div className="chat-chip-row">
-                {nextBestActions.map((action) => (
-                  <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
-                    {action.label}
-                  </button>
-                ))}
+                {previewRoutes.length ? (
+                  <div className="chat-chip-row compact">
+                    {previewRoutes.map((route) => (
+                      <button
+                        key={route.path}
+                        className={`chat-chip ${selectedPreviewRoute === route.path ? "active" : ""}`}
+                        type="button"
+                        onClick={() => setSelectedPreviewRoute(route.path)}
+                      >
+                        {route.label || route.path}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {livePreviewDoc ? (
+                  <iframe title="Chat Builder Preview" srcDoc={livePreviewDoc} className="chat-preview-frame" />
+                ) : (
+                  <div className="chat-empty-state">Generate the first app version to see the preview here while you chat.</div>
+                )}
               </div>
             </Panel>
-          </div> : null}
+          </div>
         </div>
       ) : null}
     </div>
