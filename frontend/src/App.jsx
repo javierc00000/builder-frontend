@@ -2047,6 +2047,8 @@ export default function App() {
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
     [featureState, layoutState, commandHistory, result],
   );
+  const primaryNextAction = nextBestActions[0] || null;
+  const secondaryNextActions = nextBestActions.slice(1, 3);
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
@@ -2099,6 +2101,10 @@ export default function App() {
     "Make it mobile friendly",
     "Export this app for Render",
   ], [projectId, selectedRvTemplate]);
+  const visibleChatQuickIdeas = useMemo(
+    () => builderChatQuickIdeas.slice(0, projectId ? 3 : 4),
+    [builderChatQuickIdeas, projectId],
+  );
 
   useEffect(() => {
     if (!generatedCodeFiles.length) {
@@ -3998,16 +4004,103 @@ export default function App() {
           color: var(--muted);
           font-size: 13px;
         }
-        .chat-composer { display: grid; gap: 12px; }
-        .chat-composer textarea { min-height: 120px; resize: vertical; }
+        .chat-composer { display: grid; gap: 14px; }
+        .chat-composer-shell {
+          display: grid;
+          gap: 16px;
+          padding: 18px;
+          border-radius: 22px;
+          border: 1px solid rgba(102,217,239,.18);
+          background: linear-gradient(160deg, rgba(102,217,239,.14), rgba(15,23,42,.82) 56%, rgba(255,255,255,.03));
+          box-shadow: 0 20px 50px rgba(2,6,23,.22);
+        }
+        .chat-composer-header { display: grid; gap: 8px; }
+        .chat-composer-header h3 { margin: 0; font-size: 24px; line-height: 1.15; }
+        .chat-composer-header p { margin: 0; color: var(--muted); max-width: 64ch; }
+        .chat-mode-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .chat-mode-toggle {
+          display: inline-flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 6px;
+          border-radius: 999px;
+          border: 1px solid rgba(148,163,184,.18);
+          background: rgba(15,23,42,.36);
+        }
+        .chat-mode-button {
+          border: 0;
+          border-radius: 999px;
+          padding: 10px 16px;
+          background: transparent;
+          color: var(--muted);
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .chat-mode-button.active {
+          background: rgba(102,217,239,.18);
+          color: var(--text);
+        }
+        .chat-project-state {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 9px 12px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(148,163,184,.16);
+          color: var(--muted);
+        }
+        .chat-guidance-strip {
+          display: grid;
+          gap: 10px;
+          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        }
+        .chat-guidance-tile {
+          padding: 14px 16px;
+          border-radius: 18px;
+          background: rgba(15,23,42,.44);
+          border: 1px solid rgba(148,163,184,.14);
+        }
+        .chat-guidance-tile strong { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+        .chat-composer textarea {
+          min-height: 170px;
+          resize: vertical;
+          font-size: 16px;
+          line-height: 1.6;
+          border-radius: 20px;
+          background: rgba(15,23,42,.74);
+        }
         .chat-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
         .chat-chip { border: 1px solid rgba(148,163,184,.16); background: rgba(255,255,255,.04); color: var(--text); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
         .chat-chip.active { background: rgba(102,217,239,.14); border-color: rgba(102,217,239,.35); }
+        .chat-chip-row.compact { gap: 8px; }
+        .chat-quick-ideas { display: grid; gap: 8px; }
+        .chat-quick-ideas .muted { font-size: 13px; }
+        .chat-composer-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .chat-secondary-link {
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+          padding: 0;
+          cursor: pointer;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
         .chat-side-stack { display: grid; gap: 18px; }
         .chat-empty-state { border: 1px dashed rgba(148,163,184,.18); border-radius: 18px; padding: 18px; color: var(--muted); }
         .chat-project-pill { display: inline-flex; align-items: center; gap: 8px; }
         .chat-guidance-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
         .chat-status-card { display: grid; gap: 10px; }
+        .chat-primary-next {
+          display: grid;
+          gap: 14px;
+          padding: 18px;
+          border-radius: 20px;
+          border: 1px solid rgba(102,217,239,.18);
+          background: linear-gradient(180deg, rgba(102,217,239,.12), rgba(255,255,255,.03));
+        }
+        .chat-primary-next strong { font-size: 18px; }
+        .chat-next-actions { display: flex; flex-wrap: wrap; gap: 10px; }
         @media (max-width: 1120px) { .chat-builder-shell { grid-template-columns: 1fr; } }
       `}</style>
 
@@ -5285,42 +5378,56 @@ export default function App() {
               }
             >
               <div className="chat-composer">
-                <div className="chat-chip-row">
-                  <button className={`chat-chip ${chatComposerMode === "evolve" ? "active" : ""}`} onClick={() => setChatComposerMode("evolve")}>Start or improve app</button>
-                  <button className={`chat-chip ${chatComposerMode === "mutate" ? "active" : ""}`} onClick={() => setChatComposerMode("mutate")}>Improve current app</button>
-                  {projectId ? <span className="pill chat-project-pill">Project started</span> : <span className="pill chat-project-pill">New project</span>}
-                </div>
-                <div className="chat-guidance-grid">
-                  <div className="card">
-                    <strong>Current focus</strong>
-                    <div className="muted">{builderProjectMemory.app_type || featureState.appType}</div>
+                <div className="chat-composer-shell">
+                  <div className="chat-composer-header">
+                    <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
+                    <p>{projectId ? "Keep the same project moving with one clear request at a time." : "Start with one plain-language sentence. The builder will ask follow-up questions if anything is missing."}</p>
                   </div>
-                  <div className="card">
-                    <strong>Stage</strong>
-                    <div className="muted">{projectId ? "Keep improving the same app" : "Start with one clear idea"}</div>
+                  <div className="chat-mode-row">
+                    <div className="chat-mode-toggle">
+                      <button className={`chat-mode-button ${chatComposerMode === "evolve" ? "active" : ""}`} type="button" onClick={() => setChatComposerMode("evolve")}>Start or improve app</button>
+                      <button className={`chat-mode-button ${chatComposerMode === "mutate" ? "active" : ""}`} type="button" onClick={() => setChatComposerMode("mutate")}>Improve current app</button>
+                    </div>
+                    <span className="chat-project-state">{projectId ? "Project started" : "New project"}</span>
                   </div>
-                  <div className="card">
-                    <strong>Best prompt style</strong>
-                    <div className="muted">{projectId ? "Ask for one change at a time" : "Use one sentence to describe what you want"}</div>
+                  <div className="chat-guidance-strip">
+                    <div className="chat-guidance-tile">
+                      <strong>Current focus</strong>
+                      <div>{builderProjectMemory.app_type || featureState.appType}</div>
+                    </div>
+                    <div className="chat-guidance-tile">
+                      <strong>Best prompt</strong>
+                      <div>{projectId ? "Ask for one useful change." : "Say what you want to build in one sentence."}</div>
+                    </div>
                   </div>
-                </div>
-                <textarea
-                  className="input"
-                  value={builderChatDraft}
-                  onChange={(e) => setBuilderChatDraft(e.target.value)}
-                  placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build an RV diagnostics app with login, saved reports, and a dashboard"}
-                />
-                <div className="chat-chip-row">
-                  {builderChatQuickIdeas.map((idea) => (
-                    <button key={idea} className="chat-chip" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
-                  ))}
-                </div>
-                <div className="chat-empty-state">
-                  <strong style={{ display: "block", marginBottom: 8 }}>Need a faster RV starting point?</strong>
-                  <div className="muted" style={{ marginBottom: 10 }}>Open the RV starter ideas only when you want them. They stay out of the way by default.</div>
-                  <button className="chat-chip" type="button" onClick={() => setShowRvStarterIdeas((prev) => !prev)}>
-                    {showRvStarterIdeas ? "Hide RV starter ideas" : "Show RV starter ideas"}
-                  </button>
+                  <textarea
+                    className="input"
+                    value={builderChatDraft}
+                    onChange={(e) => setBuilderChatDraft(e.target.value)}
+                    placeholder={projectId ? "Example: add saved reports and make the dashboard easier to use" : "Example: build an RV diagnostics app with login, saved reports, and a dashboard"}
+                  />
+                  <div className="chat-quick-ideas">
+                    <div className="muted">Quick starts</div>
+                    <div className="chat-chip-row compact">
+                      {visibleChatQuickIdeas.map((idea) => (
+                        <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="chat-composer-actions">
+                    <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
+                      {isChatSubmitting ? "Working..." : projectId ? "Continue" : "Build app"}
+                    </button>
+                    <button className="ghost-pill" type="button" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
+                      Improve current app
+                    </button>
+                    <button className="chat-secondary-link" type="button" onClick={() => setShowRvStarterIdeas((prev) => !prev)}>
+                      {showRvStarterIdeas ? "Hide RV starter ideas" : "Show RV starter ideas"}
+                    </button>
+                    <button className="chat-secondary-link" type="button" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>
+                      Clear chat
+                    </button>
+                  </div>
                 </div>
                 {showRvStarterIdeas ? (
                   <div className="module-list" style={{ marginTop: 12 }}>
@@ -5371,15 +5478,6 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
-                <div className="chat-chip-row">
-                  <button className="pill primary" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
-                    {isChatSubmitting ? "Working..." : projectId ? "Continue" : "Build app"}
-                  </button>
-                  <button className="ghost-pill" onClick={() => submitBuilderChatMessage(builderChatDraft || "Add dark mode and sidebar", "mutate")} disabled={isChatSubmitting || !generatedCodeFiles.length}>
-                    Improve current app
-                  </button>
-                  <button className="ghost-pill" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>Clear chat</button>
-                </div>
               </div>
             </Panel>
 
@@ -5500,13 +5598,33 @@ export default function App() {
               <div className="chat-status-card">
                 <div className="chat-empty-state">{simpleStatusMessage}</div>
                 <div className="muted">{simpleBuilderInsight}</div>
-                <div className="chat-chip-row">
-                  {nextBestActions.slice(0, 3).map((action) => (
-                    <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
+                {primaryNextAction ? (
+                  <div className="chat-primary-next">
+                    <div>
+                      <strong>{primaryNextAction.label}</strong>
+                      <div className="muted" style={{ marginTop: 6 }}>{primaryNextAction.reason}</div>
+                    </div>
+                    <div className="chat-next-actions">
+                      <button
+                        className="pill primary"
+                        type="button"
+                        onClick={() => submitBuilderChatMessage(primaryNextAction.cmd, primaryNextAction.cmd === "run-planner" ? "mutate" : "evolve")}
+                      >
+                        Do this next
+                      </button>
+                      {secondaryNextActions.map((action) => (
+                        <button
+                          key={action.key}
+                          className="chat-chip"
+                          type="button"
+                          onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </Panel>
           </div>
