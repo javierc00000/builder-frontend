@@ -1874,6 +1874,8 @@ export default function App() {
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [chatScrollTick, setChatScrollTick] = useState(0);
   const [chatComposerMode, setChatComposerMode] = useState("evolve");
+  const [showChatDetails, setShowChatDetails] = useState(false);
+  const [showRvStarterIdeas, setShowRvStarterIdeas] = useState(false);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [deployExportTarget, setDeployExportTarget] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
@@ -3955,6 +3957,7 @@ export default function App() {
         }
 
         .chat-builder-shell { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; margin-bottom: 18px; }
+        .chat-builder-shell.compact { grid-template-columns: minmax(0, 1fr); }
         .chat-thread { display: grid; gap: 12px; max-height: 860px; overflow: auto; padding-right: 6px; }
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
         .chat-message.user { background: rgba(102,217,239,.08); }
@@ -3981,6 +3984,8 @@ export default function App() {
         .chat-side-stack { display: grid; gap: 18px; }
         .chat-empty-state { border: 1px dashed rgba(148,163,184,.18); border-radius: 18px; padding: 18px; color: var(--muted); }
         .chat-project-pill { display: inline-flex; align-items: center; gap: 8px; }
+        .chat-guidance-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+        .chat-status-card { display: grid; gap: 10px; }
         @media (max-width: 1120px) { .chat-builder-shell { grid-template-columns: 1fr; } }
       `}</style>
 
@@ -5246,17 +5251,36 @@ export default function App() {
           </div>
         </>
       ) : uiMode === "chat" ? (
-        <div className="chat-builder-shell">
+        <div className={`chat-builder-shell ${showChatDetails ? "" : "compact"}`}>
           <div className="chat-side-stack">
             <Panel
               title="Chat Builder"
               subtitle="Describe the app once, then keep evolving the same project with follow-up ideas."
+              actions={
+                <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
+                  {showChatDetails ? "Hide details" : "Show details"}
+                </button>
+              }
             >
               <div className="chat-composer">
                 <div className="chat-chip-row">
                   <button className={`chat-chip ${chatComposerMode === "evolve" ? "active" : ""}`} onClick={() => setChatComposerMode("evolve")}>Build / Evolve</button>
                   <button className={`chat-chip ${chatComposerMode === "mutate" ? "active" : ""}`} onClick={() => setChatComposerMode("mutate")}>Mutate current files</button>
                   {projectId ? <span className="pill chat-project-pill">Project · {projectId}</span> : <span className="pill chat-project-pill">No project yet</span>}
+                </div>
+                <div className="chat-guidance-grid">
+                  <div className="card">
+                    <strong>Current focus</strong>
+                    <div className="muted">{builderProjectMemory.app_type || featureState.appType}</div>
+                  </div>
+                  <div className="card">
+                    <strong>Stage</strong>
+                    <div className="muted">{projectId ? "Keep improving the same project" : "Start with one clear idea"}</div>
+                  </div>
+                  <div className="card">
+                    <strong>Best prompt style</strong>
+                    <div className="muted">{projectId ? "One short change at a time" : "One sentence describing what you want"}</div>
+                  </div>
                 </div>
                 <textarea
                   className="input"
@@ -5269,53 +5293,62 @@ export default function App() {
                     <button key={idea} className="chat-chip" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
                   ))}
                 </div>
-                <div className="module-list" style={{ marginTop: 12 }}>
-                  <div className="module-item">
-                    <div className="module-top">
-                      <strong>RV Smart Templates</strong>
-                      <span className="tag">Niche mode</span>
-                    </div>
-                    <div className="chat-chip-row">
-                      {RV_SMART_TEMPLATES.map((template) => (
-                        <button
-                          key={template.key}
-                          className={`chat-chip ${selectedRvTemplateKey === template.key ? "active" : ""}`}
-                          type="button"
-                          onClick={() => applyRvSmartTemplate(template.key)}
-                        >
-                          {template.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="muted" style={{ marginTop: 10 }}>
-                      {selectedRvTemplate.description}
-                    </div>
-                    <div className="zone-chip-row" style={{ marginTop: 10 }}>
-                      <span className="zone-chip">{rvCampingProfile.label}</span>
-                      <span className="zone-chip">{rvIntelligence.batteryAh}Ah</span>
-                      <span className="zone-chip">{rvIntelligence.solarWatts}W</span>
-                    </div>
-                    <label className="simple-field" style={{ marginTop: 10 }}>
-                      <span>Camping profile</span>
-                      <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
-                        {RV_CAMPING_PROFILES.map((profile) => (
-                          <option key={profile.key} value={profile.key}>{profile.label}</option>
+                <div className="chat-empty-state">
+                  <strong style={{ display: "block", marginBottom: 8 }}>Need a faster RV starting point?</strong>
+                  <div className="muted" style={{ marginBottom: 10 }}>Open the RV starter ideas only when you want them. They stay out of the way by default.</div>
+                  <button className="chat-chip" type="button" onClick={() => setShowRvStarterIdeas((prev) => !prev)}>
+                    {showRvStarterIdeas ? "Hide RV starter ideas" : "Show RV starter ideas"}
+                  </button>
+                </div>
+                {showRvStarterIdeas ? (
+                  <div className="module-list" style={{ marginTop: 12 }}>
+                    <div className="module-item">
+                      <div className="module-top">
+                        <strong>RV Smart Templates</strong>
+                        <span className="tag">Niche mode</span>
+                      </div>
+                      <div className="chat-chip-row">
+                        {RV_SMART_TEMPLATES.map((template) => (
+                          <button
+                            key={template.key}
+                            className={`chat-chip ${selectedRvTemplateKey === template.key ? "active" : ""}`}
+                            type="button"
+                            onClick={() => applyRvSmartTemplate(template.key)}
+                          >
+                            {template.label}
+                          </button>
                         ))}
-                      </select>
-                    </label>
-                    <div className="module-list" style={{ marginTop: 12 }}>
-                      {rvAffiliateRecommendations.slice(0, 3).map((item) => (
-                        <div key={item.key} className="module-item">
-                          <div className="module-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">{item.cta}</span>
+                      </div>
+                      <div className="muted" style={{ marginTop: 10 }}>
+                        {selectedRvTemplate.description}
+                      </div>
+                      <div className="zone-chip-row" style={{ marginTop: 10 }}>
+                        <span className="zone-chip">{rvCampingProfile.label}</span>
+                        <span className="zone-chip">{rvIntelligence.batteryAh}Ah</span>
+                        <span className="zone-chip">{rvIntelligence.solarWatts}W</span>
+                      </div>
+                      <label className="simple-field" style={{ marginTop: 10 }}>
+                        <span>Camping profile</span>
+                        <select className="text-input" value={rvCampingProfileKey} onChange={(e) => setRvCampingProfileKey(e.target.value)}>
+                          {RV_CAMPING_PROFILES.map((profile) => (
+                            <option key={profile.key} value={profile.key}>{profile.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="module-list" style={{ marginTop: 12 }}>
+                        {rvAffiliateRecommendations.slice(0, 3).map((item) => (
+                          <div key={item.key} className="module-item">
+                            <div className="module-top">
+                              <strong>{item.title}</strong>
+                              <span className="tag">{item.cta}</span>
+                            </div>
+                            <div className="muted">{item.fit}</div>
                           </div>
-                          <div className="muted">{item.fit}</div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : null}
                 <div className="chat-chip-row">
                   <button className="pill primary" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
                     {isChatSubmitting ? "Working..." : projectId ? "Continue Project" : "Build from Idea"}
@@ -5331,6 +5364,11 @@ export default function App() {
             <Panel
               title="Conversation"
               subtitle="Use natural language like Replit-style app building. The same project keeps evolving."
+              actions={
+                <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
+                  {showChatDetails ? "Hide details" : "Show details"}
+                </button>
+              }
             >
               <div className="chat-thread" key={chatScrollTick}>
                 {builderChatHistory.length ? builderChatHistory.map((message) => (
@@ -5435,9 +5473,23 @@ export default function App() {
                 )}
               </div>
             </Panel>
+
+            <Panel title="Builder status" subtitle="Short update and the next sensible moves.">
+              <div className="chat-status-card">
+                <div className="chat-empty-state">{statusMessage || "Builder ready."}</div>
+                <div className="muted">{builderInsight || "Tell the builder what to change next."}</div>
+                <div className="chat-chip-row">
+                  {nextBestActions.slice(0, 3).map((action) => (
+                    <button key={action.key} className="chat-chip" onClick={() => submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}>
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Panel>
           </div>
 
-          <div className="chat-side-stack">
+          {showChatDetails ? <div className="chat-side-stack">
             <Panel title="Live project snapshot" subtitle="This stays in sync with your existing builder systems.">
               <div className="card-grid">
                 <div className="card">
@@ -5656,7 +5708,7 @@ export default function App() {
                 ))}
               </div>
             </Panel>
-          </div>
+          </div> : null}
         </div>
       ) : null}
     </div>
