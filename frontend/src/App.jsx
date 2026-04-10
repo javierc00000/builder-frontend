@@ -22,7 +22,6 @@ const STORAGE_KEYS = {
   builderChatDraft: "builder_chat_draft_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
-  rvMonetizationConfig: "builder_rv_monetization_config_v1",
 };
 
 const MODULE_LIBRARY = {
@@ -270,38 +269,6 @@ const RV_CAMPING_PROFILES = [
   },
 ];
 
-const DEFAULT_RV_MONETIZATION_CONFIG = {
-  monthlyPrice: 9.99,
-  yearlyPrice: 69.99,
-  trialDays: 7,
-  affiliateTagCa: "rvinspector03-20",
-  affiliateTagUs: "rvinspectorpr-20",
-  premiumTemplatesOnly: false,
-  exportLeadMagnet: true,
-};
-
-const RV_PREMIUM_OFFERS = [
-  {
-    key: "pro-diagnostics",
-    label: "RV Pro Diagnostics",
-    priceHint: "$9.99/mo",
-    value: "Saved scan history, premium reports, and deeper AI troubleshooting flows.",
-  },
-  {
-    key: "power-planner-plus",
-    label: "Power Planner Plus",
-    priceHint: "$69.99/yr",
-    value: "Battery, solar, and inverter recommendations with cost ranges and affiliate-ready gear picks.",
-  },
-  {
-    key: "maintenance-club",
-    label: "Maintenance Club",
-    priceHint: "Lead magnet",
-    value: "Free checklist export that feeds paid reminders, history, and premium owner dashboard upgrades.",
-  },
-];
-
-
 const RV_AFFILIATE_ENGINE = [
   {
     key: "lifepo4_100",
@@ -418,49 +385,6 @@ function getRvAffiliateRecommendations(intel, templateKey = "rv_power") {
   }));
 }
 
-
-
-function buildAmazonAffiliateUrl(slug, monetizationConfig, locale = "ca") {
-  const base = locale === "us" ? "https://www.amazon.com/s" : "https://www.amazon.ca/s";
-  const tag = locale === "us" ? monetizationConfig?.affiliateTagUs : monetizationConfig?.affiliateTagCa;
-  const query = encodeURIComponent(slug || "rv accessories");
-  return `${base}?k=${query}${tag ? `&tag=${tag}` : ""}`;
-}
-
-function buildRvMonetizationPlan({ template, intelligence, recommendations, monetizationConfig }) {
-  const monthly = Number(monetizationConfig?.monthlyPrice || 9.99);
-  const yearly = Number(monetizationConfig?.yearlyPrice || 69.99);
-  const trialDays = Number(monetizationConfig?.trialDays || 7);
-  const affiliateCount = Array.isArray(recommendations) ? recommendations.length : 0;
-  const estimatedAov = intelligence?.estimatedCostHigh ? Math.max(199, Math.round(intelligence.estimatedCostHigh * 0.18)) : 299;
-  const commissionLow = Math.round(estimatedAov * 0.03);
-  const commissionHigh = Math.round(estimatedAov * 0.06);
-  const leadMagnet = monetizationConfig?.exportLeadMagnet
-    ? "Free exported RV plan/checklist used as the lead magnet into paid reminders or diagnostics."
-    : "Paid upsell is focused directly on premium template access and saved member dashboards.";
-  return {
-    headline: `${template?.label || "RV app"} monetization stack`,
-    subscription: {
-      monthly,
-      yearly,
-      trialDays,
-      pitch: `Start with ${trialDays}-day trial, then ${monthly.toFixed(2)}/mo or ${yearly.toFixed(2)}/yr for saved data, premium reports, and deeper RV guidance.`,
-    },
-    affiliate: {
-      picks: affiliateCount,
-      estimatedCommissionRange: `$${commissionLow}-$${commissionHigh}`,
-      strategy: affiliateCount
-        ? "Feature one main product, then 2-4 supporting add-ons based on battery, solar, inverter, and profile."
-        : "Use template-specific gear blocks once the planner has enough demand signals.",
-    },
-    leadMagnet,
-    paywallHooks: [
-      "Saved RV plans and scan history",
-      "Premium export / printable checklist",
-      "Advanced sizing and member dashboard",
-    ],
-  };
-}
 const SIMPLE_STYLE_OPTIONS = ["Dark glass", "Clean SaaS", "Builder Pro", "Minimal"];
 const SIMPLE_GENERATION_STAGES = [
   "Understanding what you want to build",
@@ -1909,7 +1833,7 @@ export default function App() {
   });
   const [selectedRvTemplateKey, setSelectedRvTemplateKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvTemplate, RV_SMART_TEMPLATES[0].key));
   const [rvCampingProfileKey, setRvCampingProfileKey] = useState(() => loadFromStorage(STORAGE_KEYS.rvCampingProfile, RV_CAMPING_PROFILES[0].key));
-  const [rvMonetizationConfig, setRvMonetizationConfig] = useState(() => ({ ...DEFAULT_RV_MONETIZATION_CONFIG, ...loadFromStorage(STORAGE_KEYS.rvMonetizationConfig, DEFAULT_RV_MONETIZATION_CONFIG) }));
+  const [generatedAppMonetization, setGeneratedAppMonetization] = useState(null);
   const [simplePendingPrompt, setSimplePendingPrompt] = useState("");
   const [simpleGenerationStage, setSimpleGenerationStage] = useState(0);
   const [generatedFileTree, setGeneratedFileTree] = useState([]);
@@ -1961,7 +1885,6 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.simpleDraft, simpleDraft), [simpleDraft]);
   useEffect(() => saveToStorage(STORAGE_KEYS.mutationVersions, mutationVersions), [mutationVersions]);
   useEffect(() => saveToStorage(STORAGE_KEYS.systemPlanner, systemPlanner), [systemPlanner]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.rvMonetizationConfig, rvMonetizationConfig), [rvMonetizationConfig]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvTemplate, selectedRvTemplateKey), [selectedRvTemplateKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.rvCampingProfile, rvCampingProfileKey), [rvCampingProfileKey]);
   useEffect(() => saveToStorage(STORAGE_KEYS.projectId, projectId), [projectId]);
@@ -2052,15 +1975,6 @@ export default function App() {
   const rvAffiliateRecommendations = useMemo(
     () => getRvAffiliateRecommendations(rvIntelligence, selectedRvTemplateKey),
     [rvIntelligence, selectedRvTemplateKey],
-  );
-  const rvMonetizationPlan = useMemo(
-    () => buildRvMonetizationPlan({
-      template: selectedRvTemplate,
-      intelligence: rvIntelligence,
-      recommendations: rvAffiliateRecommendations,
-      monetizationConfig: rvMonetizationConfig,
-    }),
-    [selectedRvTemplate, rvIntelligence, rvAffiliateRecommendations, rvMonetizationConfig],
   );
   const nextBestActions = useMemo(
     () => getNextBestActions({ featureState, layoutState, commandHistory, result }),
@@ -2557,14 +2471,6 @@ export default function App() {
     setSimpleDraft((prev) => ({ ...prev, [field]: value }));
   }
 
-  function updateRvMonetization(field, value) {
-    setRvMonetizationConfig((prev) => ({
-      ...prev,
-      [field]: typeof prev[field] === "number" ? Number(value) : value,
-    }));
-  }
-
-
   function selectSimpleStarter(starterKey) {
     const starter = getSimpleStarterByKey(starterKey);
     setSimpleDraft((prev) => ({
@@ -2645,6 +2551,7 @@ export default function App() {
     setGeneratedComponents(nextComponents);
     setGeneratedCodeFiles(files);
     setSelectedGeneratedFilePath(files[0]?.path || "");
+    setGeneratedAppMonetization(payload?.monetization || null);
     return { files, nextRoutes, nextComponents, nextFileTree };
   }
 
@@ -2665,7 +2572,6 @@ export default function App() {
       active_modules: activeModules,
       rv_template_key: selectedRvTemplateKey,
       rv_camping_profile: rvCampingProfileKey,
-      monetization_config: rvMonetizationConfig,
     };
 
     const response = await fetch(`${API_BASE}/orchestrate`, {
@@ -2932,9 +2838,6 @@ async function downloadDeploymentBundle(target) {
           current_files: generatedCodeFiles,
           current_routes: generatedRoutes,
           current_components: generatedComponents,
-          rv_template_key: selectedRvTemplateKey,
-          rv_camping_profile: rvCampingProfileKey,
-          monetization_config: rvMonetizationConfig,
         }),
       });
 
@@ -3098,7 +3001,6 @@ async function downloadDeploymentBundle(target) {
           system_prompt: buildSystemPlannerPromptBlock(systemPlanner),
           rv_template_key: selectedRvTemplateKey,
           rv_camping_profile: rvCampingProfileKey,
-          monetization_config: rvMonetizationConfig,
         }),
       });
 
@@ -3114,6 +3016,7 @@ async function downloadDeploymentBundle(target) {
       });
       setGeneratedCodeFiles(files);
       setSelectedGeneratedFilePath(files[0]?.path || "");
+      setGeneratedAppMonetization(data?.monetization || null);
       appendMutationLog({
         type: "code-generation-fallback",
         command: sourcePrompt,
@@ -4063,81 +3966,6 @@ async function downloadDeploymentBundle(target) {
                 </div>
               </Panel>
 
-              <Panel title="RV Monetization Layer" subtitle="Turn each RV template into recurring revenue, affiliate clicks, and lead capture." compact>
-                <div className="simple-builder-grid">
-                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
-                    <div className="module-top">
-                      <strong>Subscription stack</strong>
-                      <span className="tag">{rvMonetizationPlan.subscription.trialDays}-day trial</span>
-                    </div>
-                    <div className="muted">{rvMonetizationPlan.subscription.pitch}</div>
-                    <label className="simple-field">
-                      <span>Monthly price</span>
-                      <input className="text-input" type="number" step="0.01" value={rvMonetizationConfig.monthlyPrice} onChange={(e) => updateRvMonetization("monthlyPrice", e.target.value)} />
-                    </label>
-                    <label className="simple-field">
-                      <span>Yearly price</span>
-                      <input className="text-input" type="number" step="0.01" value={rvMonetizationConfig.yearlyPrice} onChange={(e) => updateRvMonetization("yearlyPrice", e.target.value)} />
-                    </label>
-                    <label className="simple-field">
-                      <span>Trial days</span>
-                      <input className="text-input" type="number" step="1" value={rvMonetizationConfig.trialDays} onChange={(e) => updateRvMonetization("trialDays", e.target.value)} />
-                    </label>
-                    <div className="zone-chip-row">
-                      {rvMonetizationPlan.paywallHooks.map((hook) => (
-                        <span key={hook} className="zone-chip">{hook}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="panel-card compact" style={{ display: "grid", gap: 12 }}>
-                    <div className="module-top">
-                      <strong>Affiliate engine</strong>
-                      <span className="tag">{rvMonetizationPlan.affiliate.estimatedCommissionRange}</span>
-                    </div>
-                    <div className="muted">{rvMonetizationPlan.affiliate.strategy}</div>
-                    <label className="simple-field">
-                      <span>Amazon.ca tag</span>
-                      <input className="text-input" value={rvMonetizationConfig.affiliateTagCa} onChange={(e) => updateRvMonetization("affiliateTagCa", e.target.value)} />
-                    </label>
-                    <label className="simple-field">
-                      <span>Amazon.com tag</span>
-                      <input className="text-input" value={rvMonetizationConfig.affiliateTagUs} onChange={(e) => updateRvMonetization("affiliateTagUs", e.target.value)} />
-                    </label>
-                    <div className="module-list">
-                      {rvAffiliateRecommendations.map((item) => (
-                        <div key={`mon-${item.key}`} className="module-item">
-                          <div className="module-top">
-                            <strong>{item.title}</strong>
-                            <span className="tag">{item.cta}</span>
-                          </div>
-                          <div className="muted">{item.fit}</div>
-                          <div className="zone-chip-row">
-                            <a className="pill" href={buildAmazonAffiliateUrl(item.slug || item.title, rvMonetizationConfig, "ca")} target="_blank" rel="noreferrer">Amazon.ca</a>
-                            <a className="pill" href={buildAmazonAffiliateUrl(item.slug || item.title, rvMonetizationConfig, "us")} target="_blank" rel="noreferrer">Amazon.com</a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="simple-builder-grid" style={{ marginTop: 12 }}>
-                  {RV_PREMIUM_OFFERS.map((offer) => (
-                    <div key={offer.key} className="panel-card compact" style={{ display: "grid", gap: 8 }}>
-                      <div className="module-top">
-                        <strong>{offer.label}</strong>
-                        <span className="tag">{offer.priceHint}</span>
-                      </div>
-                      <div className="muted">{offer.value}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="zone-chip-row" style={{ marginTop: 12 }}>
-                  <span className="zone-chip">Lead magnet · {rvMonetizationPlan.leadMagnet}</span>
-                  <span className="zone-chip">Featured picks · {rvMonetizationPlan.affiliate.picks}</span>
-                  <span className="zone-chip">Template · {selectedRvTemplate.label}</span>
-                </div>
-              </Panel>
-
               </Panel>
 
               <div className="simple-starter-grid">
@@ -4543,6 +4371,36 @@ async function downloadDeploymentBundle(target) {
                         )) : <div className="muted">Generate code to inspect real file contents.</div>}
                       </div>
                     </div>
+
+                    {generatedAppMonetization ? (
+                      <div className="result-box">
+                        <div className="module-top">
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <strong>Generated app monetization</strong>
+                            <span className="muted" style={{ fontSize: 12 }}>These upgrade hooks and affiliate blocks are now part of the generated app output.</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span className="tag">{generatedAppMonetization.subscription?.monthlyPrice ? `$${generatedAppMonetization.subscription.monthlyPrice}/mo` : "Monthly ready"}</span>
+                            <span className="tag">{generatedAppMonetization.subscription?.yearlyPrice ? `$${generatedAppMonetization.subscription.yearlyPrice}/yr` : "Yearly ready"}</span>
+                            <span className="tag">{generatedAppMonetization.subscription?.trialDays || 7}-day trial</span>
+                          </div>
+                        </div>
+                        <div className="module-list" style={{ marginTop: 12 }}>
+                          {(generatedAppMonetization.paywallHooks || []).map((hook) => (
+                            <div key={hook} className="module-item">
+                              <strong>{hook}</strong>
+                              <span className="muted">Hook will be rendered inside the generated app screens.</span>
+                            </div>
+                          ))}
+                          {(generatedAppMonetization.featuredProducts || []).slice(0, 3).map((item) => (
+                            <div key={item.slug || item.title} className="module-item">
+                              <strong>{item.title}</strong>
+                              <span className="muted">{item.fit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="result-box">
                       <strong>Selected file preview</strong>
