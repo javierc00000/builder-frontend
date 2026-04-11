@@ -794,14 +794,14 @@ function isBuilderWorkspaceRequest(message) {
 function isBuilderConversationRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
-  return /(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|improve this ai|improve the ai|improve the builder ai|builder ai)/.test(text);
+  return /(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|this ia|the ia itself|improve this ai|improve the ai|improve this ia|improve the ia|improve the builder ai|builder ai|builder ia|why .*focus|why .*focused|wrong focus|old context|project context|rv tool)/.test(text);
 }
 
 function isBuilderSuggestionRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
   const asksForSuggestions = /(what suggestion|what suggestions|suggestion|suggestions|ideas|recommendation|recommendations|smarter|better|beyyer|keep improving|improve)/.test(text);
-  const targetsBuilderAi = /(builder|ai|chat|assistant|this ai|builder ai|builder ui|builder workspace)/.test(text);
+  const targetsBuilderAi = /(builder|ai|ia|chat|assistant|this ai|this ia|builder ai|builder ia|builder ui|builder workspace)/.test(text);
   return asksForSuggestions && targetsBuilderAi;
 }
 
@@ -2327,7 +2327,7 @@ export default function App() {
     if (lastBuilderRequest) {
       return "builder ui";
     }
-    if (/(this ai|the ai|builder ai|my builder|this builder|builder ui|chat ui)/i.test(String(builderProjectMemory.last_user_request || ""))) {
+    if (/(this ai|the ai|this ia|the ia|builder ai|builder ia|my builder|this builder|builder ui|chat ui)/i.test(String(builderProjectMemory.last_user_request || ""))) {
       return "builder ai";
     }
     return builderProjectMemory.app_type || featureState.appType || "New app";
@@ -3164,6 +3164,7 @@ export default function App() {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
     const scopedMessage = buildScopedChatMessage(message);
+    const isBuilderConversation = isBuilderConversationRequest(message);
     const prefersAutoApply = builderImprovementMode === "auto" || shouldAutoApplyImprovements(message, chatReplyPreference);
     const applyConfirmation = isApplyConfirmationMessage(message);
 
@@ -3177,9 +3178,70 @@ export default function App() {
     setPrompt(scopedMessage);
     setUiMode("chat");
     setSimpleFlowStep("builder");
+    setBuilderProjectMemory((prev) => ({
+      ...prev,
+      last_user_request: message,
+    }));
 
     try {
       setIsChatSubmitting(true);
+
+      if (isBuilderConversation && !isBuilderWorkspaceRequest(message) && !isBuilderSuggestionRequest(message)) {
+        const builderActions = smartBuilderUpgradeActions.length
+          ? smartBuilderUpgradeActions
+          : [{
+            label: "Improve this builder UI",
+            prompt: "improve this builder ui",
+            mode: "evolve",
+            reason: "Keeps the builder focused on its own UX instead of the current project.",
+          }];
+
+        appendBuilderChatMessage({
+          role: "assistant",
+          text: "It was still using the current project context, so RV/tool details leaked into a builder-AI question. I am treating this as a builder-only conversation now, not an app request.",
+          meta: "Builder-only focus restored.",
+          actions: builderActions.slice(0, 4),
+          advice: {
+            cautions: [
+              {
+                label: "Old project context takes over",
+                reason: "If builder questions fall into app routing, the chat keeps talking about the active RV or tool project instead of improving the AI itself.",
+              },
+            ],
+            better_options: [
+              {
+                label: "Use builder-only routing",
+                reason: "Questions about the AI, IA, chat, or builder should stay in builder mode and return builder improvements first.",
+              },
+            ],
+          },
+        });
+
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          builder_summary: "Current conversation focus is the builder AI itself.",
+          last_builder_workspace_request: "",
+          last_user_request: message,
+        }));
+
+        if (prefersAutoApply) {
+          const autoAction = builderActions[0];
+          const applyMode = autoAction.mode || resolvedMode;
+          const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
+          const summary = applyMode === "mutate"
+            ? await handleGeneratedAppMutation(applyPrompt)
+            : await runBuilderBrain(applyPrompt);
+
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: `I applied a builder-focused improvement instead of using the RV project context: ${autoAction.label}.`,
+            meta: summary?.mutationSummary?.length
+              ? summary.mutationSummary.slice(0, 3).join(" • ")
+              : (summary?.builderInsight || "Builder-focused improvement applied."),
+          });
+        }
+        return;
+      }
 
       if (applyConfirmation && latestAssistantLeadAction?.lead?.prompt) {
         const action = latestAssistantLeadAction.lead;
