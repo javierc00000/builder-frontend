@@ -4789,10 +4789,7 @@ export default function App() {
           --chat-sticky-top: 14px;
           --chat-sticky-gap: 14px;
         }
-        .chat-builder-shell {
-          --chat-window-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
-        }
-        .chat-thread { display: grid; gap: 12px; max-height: 860px; overflow: auto; padding-right: 6px; }
+        .chat-thread { display: grid; gap: 12px; padding-right: 0; overflow: visible; max-height: none; }
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
         .chat-message.user { background: rgba(102,217,239,.08); }
         .chat-message.assistant { background: rgba(139,92,246,.08); }
@@ -4925,21 +4922,6 @@ export default function App() {
           scroll-margin-top: 96px;
           display: grid;
         }
-        .chat-conversation-wrap .panel-card {
-          height: auto;
-          max-height: min(72vh, 760px);
-          display: flex;
-          flex-direction: column;
-        }
-        .chat-conversation-wrap .panel-card > div:last-child {
-          flex: 1;
-          min-height: 0;
-          display: grid;
-        }
-        .chat-conversation-wrap .chat-thread {
-          max-height: clamp(300px, 56vh, 620px);
-          height: auto;
-        }
         .chat-unread-row {
           display: flex;
           justify-content: flex-start;
@@ -4981,11 +4963,10 @@ export default function App() {
         .chat-preview-rail {
           display: grid;
           gap: 18px;
-          position: sticky;
-          top: var(--chat-sticky-top, 14px);
-          max-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
-          overflow: auto;
-          padding-right: 4px;
+          position: static;
+          max-height: none;
+          overflow: visible;
+          padding-right: 0;
         }
         .chat-preview-frame {
           width: 100%;
@@ -5028,8 +5009,6 @@ export default function App() {
         @media (max-width: 1120px) {
           .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
           .chat-composer-sticky { position: static; }
-          .chat-conversation-wrap .panel-card { height: auto; }
-          .chat-conversation-wrap .chat-thread { height: auto; max-height: 480px; }
           .chat-preview-rail { position: static; }
           .chat-preview-frame { min-height: 420px; }
         }
