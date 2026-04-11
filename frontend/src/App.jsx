@@ -2157,8 +2157,8 @@ export default function App() {
       extras: visibleActions.slice(1, 3),
     };
   }, [builderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
-  const statusCardPrimaryAction = uiMode === "chat" ? latestAssistantLeadAction.lead : primaryNextAction;
-  const statusCardSecondaryActions = uiMode === "chat" ? latestAssistantLeadAction.extras : secondaryNextActions;
+  const statusCardPrimaryAction = uiMode === "chat" ? null : primaryNextAction;
+  const statusCardSecondaryActions = uiMode === "chat" ? [] : secondaryNextActions;
   const currentChatFocusLabel = useMemo(() => {
     const lastBuilderRequest = String(builderProjectMemory.last_builder_workspace_request || "").trim();
     if (lastBuilderRequest) {
