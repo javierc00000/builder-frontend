@@ -805,6 +805,43 @@ function isBuilderSuggestionRequest(message) {
   return asksForSuggestions && targetsBuilderAi;
 }
 
+function isBuilderOnlyAssistantMessage(message) {
+  if (!message || message.role !== "assistant") return false;
+  if (Array.isArray(message.researchFindings) && message.researchFindings.length) return false;
+  if (Array.isArray(message.knowledgeHits) && message.knowledgeHits.length) return false;
+  if (message.researchRecommendation?.prompt) return false;
+
+  const text = `${message.text || ""} ${message.meta || ""}`.toLowerCase();
+  if (/(research error|external results|saved plans|pdf report|appliance presets|rv|battery|solar|admin panel|dashboard|tool app|diagnostics)/.test(text)) {
+    return false;
+  }
+  if (/(builder|chat|composer|preview|layout|mobile|header|ui|builder-only|focus restored|improvement)/.test(text)) {
+    return true;
+  }
+
+  if (Array.isArray(message.actions) && message.actions.length) {
+    return message.actions.every((action) => {
+      const prompt = String(action?.prompt || "").toLowerCase();
+      return isBuilderWorkspaceRequest(prompt)
+        || isBuilderConversationRequest(prompt)
+        || /(builder|chat|preview|layout|mobile|header|ui)/.test(prompt);
+    });
+  }
+
+  return false;
+}
+
+function shouldHideAssistantMessageInBuilderFocus(message, index, history, conversationTopic, lastUserRequest) {
+  if (!message || message.role !== "assistant") return false;
+  const builderAiFocus = conversationTopic === "builder_ai"
+    || /(this ai|the ai|this ia|the ia|builder ai|builder ia|my builder|this builder|builder ui|chat ui)/i.test(String(lastUserRequest || ""));
+  if (!builderAiFocus) return false;
+  const latestBuilderOnlyUserMessageIndex = history.findIndex((item) => item.role === "user" && (isBuilderConversationRequest(item.text) || isBuilderSuggestionRequest(item.text)));
+  if (latestBuilderOnlyUserMessageIndex === -1) return false;
+  if (index > latestBuilderOnlyUserMessageIndex) return true;
+  return !isBuilderOnlyAssistantMessage(message);
+}
+
 function isFullStackRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
@@ -2301,9 +2338,14 @@ export default function App() {
   const showLocalNextActions = uiMode !== "chat" || Boolean(projectId || generatedCodeFiles.length || generatedRoutes.length || generatedComponents.length);
   const primaryNextAction = showLocalNextActions ? nextBestActions[0] || null : null;
   const secondaryNextActions = showLocalNextActions ? nextBestActions.slice(1, 3) : [];
+  const currentConversationTopic = String(builderProjectMemory.current_conversation_topic || "").trim();
+  const visibleBuilderChatHistory = useMemo(
+    () => builderChatHistory.filter((message, index, history) => !shouldHideAssistantMessageInBuilderFocus(message, index, history, currentConversationTopic, builderProjectMemory.last_user_request)),
+    [builderChatHistory, currentConversationTopic, builderProjectMemory.last_user_request],
+  );
   const latestAssistantLeadAction = useMemo(() => {
     const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
-    const latestAssistantMessage = builderChatHistory.find((item) => item.role === "assistant") || null;
+    const latestAssistantMessage = visibleBuilderChatHistory.find((item) => item.role === "assistant") || null;
     if (!latestAssistantMessage || !Array.isArray(latestAssistantMessage.actions) || !latestAssistantMessage.actions.length) {
       return { lead: null, extras: [] };
     }
@@ -2315,14 +2357,17 @@ export default function App() {
       lead: visibleActions[0],
       extras: visibleActions.slice(1, 3),
     };
-  }, [builderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
+  }, [visibleBuilderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
   const statusCardPrimaryAction = uiMode === "chat" ? null : primaryNextAction;
   const statusCardSecondaryActions = uiMode === "chat" ? [] : secondaryNextActions;
   const latestAssistantChatMessage = useMemo(
-    () => builderChatHistory.find((item) => item.role === "assistant") || null,
-    [builderChatHistory],
+    () => visibleBuilderChatHistory.find((item) => item.role === "assistant") || null,
+    [visibleBuilderChatHistory],
   );
   const currentChatFocusLabel = useMemo(() => {
+    if (currentConversationTopic === "builder_ai") {
+      return "builder ai";
+    }
     const lastBuilderRequest = String(builderProjectMemory.last_builder_workspace_request || "").trim();
     if (lastBuilderRequest) {
       return "builder ui";
@@ -2331,7 +2376,7 @@ export default function App() {
       return "builder ai";
     }
     return builderProjectMemory.app_type || featureState.appType || "New app";
-  }, [builderProjectMemory.last_builder_workspace_request, builderProjectMemory.last_user_request, builderProjectMemory.app_type, featureState.appType]);
+  }, [currentConversationTopic, builderProjectMemory.last_builder_workspace_request, builderProjectMemory.last_user_request, builderProjectMemory.app_type, featureState.appType]);
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
@@ -3186,6 +3231,62 @@ export default function App() {
     try {
       setIsChatSubmitting(true);
 
+      if (isBuilderSuggestionRequest(message)) {
+        const suggestionActions = smartBuilderUpgradeActions.length
+          ? smartBuilderUpgradeActions
+          : [{
+            label: "Improve this builder UI",
+            prompt: "improve this builder ui",
+            mode: "evolve",
+            reason: "Applies a direct builder workspace improvement right away.",
+          }];
+
+        appendBuilderChatMessage({
+          role: "assistant",
+          text: "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          meta: "Builder-only suggestion plan ready.",
+          actions: suggestionActions.slice(0, 4),
+          advice: {
+            better_options: suggestionActions.slice(0, 3).map((item) => ({
+              label: item.label,
+              reason: item.reason || "High-impact improvement for this builder workflow.",
+            })),
+            cautions: [
+              {
+                label: "Project context can take over",
+                reason: "Builder suggestion requests should not inherit the active RV or app project context.",
+              },
+            ],
+          },
+        });
+
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          builder_summary: "Current conversation focus is builder AI improvement suggestions.",
+          current_conversation_topic: "builder_ai",
+          last_builder_workspace_request: "",
+          last_user_request: message,
+        }));
+
+        if (prefersAutoApply) {
+          const autoAction = suggestionActions[0];
+          const applyMode = autoAction.mode || resolvedMode;
+          const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
+          const summary = applyMode === "mutate"
+            ? await handleGeneratedAppMutation(applyPrompt)
+            : await runBuilderBrain(applyPrompt);
+
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: `I applied this builder-focused improvement now: ${autoAction.label}.`,
+            meta: summary?.mutationSummary?.length
+              ? summary.mutationSummary.slice(0, 3).join(" • ")
+              : (summary?.builderInsight || "Builder improvement applied."),
+          });
+        }
+        return;
+      }
+
       if (isBuilderConversation && !isBuilderWorkspaceRequest(message) && !isBuilderSuggestionRequest(message)) {
         const builderActions = smartBuilderUpgradeActions.length
           ? smartBuilderUpgradeActions
@@ -3220,6 +3321,7 @@ export default function App() {
         setBuilderProjectMemory((prev) => ({
           ...prev,
           builder_summary: "Current conversation focus is the builder AI itself.",
+          current_conversation_topic: "builder_ai",
           last_builder_workspace_request: "",
           last_user_request: message,
         }));
@@ -3278,6 +3380,7 @@ export default function App() {
         setBuilderProjectMemory((prev) => ({
           ...prev,
           builder_summary: "This chat can help improve the builder UI as well as generated apps.",
+          current_conversation_topic: "builder_ai",
           last_builder_workspace_request: message,
           dismissed_assistant_action_id: "",
           accepted_assistant_action_id: "",
@@ -3294,6 +3397,7 @@ export default function App() {
         const targetScope = fullStackScope || "fullstack";
         setBuilderProjectMemory((prev) => ({
           ...prev,
+          current_conversation_topic: "project_app",
           preferred_scope: targetScope === "fullstack" ? "frontend-and-backend" : targetScope,
           full_stack_preferred: true,
         }));
@@ -3342,6 +3446,11 @@ export default function App() {
       const agentData = await requestBuilderChatAgent(scopedMessage, resolvedMode);
       if (agentData?.project_memory) {
         setBuilderProjectMemory(agentData.project_memory);
+      } else if (!isBuilderConversation && !isBuilderSuggestionRequest(message)) {
+        setBuilderProjectMemory((prev) => ({
+          ...prev,
+          current_conversation_topic: "project_app",
+        }));
       }
       const agentMeta = [
         agentData?.status_summary || null,
@@ -6438,6 +6547,7 @@ export default function App() {
                               if (idea === "Start fresh topic") {
                                 setBuilderProjectMemory((prev) => ({
                                   ...prev,
+                                  current_conversation_topic: "",
                                   project_summary: "",
                                   app_type: "",
                                   builder_mode: "",
@@ -6571,7 +6681,8 @@ export default function App() {
                   </div>
                 ) : null}
                 <div className="chat-thread" ref={chatThreadRef} onScroll={handleChatThreadScroll}>
-                  {builderChatHistory.length ? builderChatHistory.map((message) => (
+                  {visibleBuilderChatHistory.length ? visibleBuilderChatHistory.map((message) => {
+                    return (
                     <div key={message.id} className={`chat-message ${message.role}`}>
                       <div className="chat-meta-row">
                         <div className="chat-role">
@@ -6695,7 +6806,7 @@ export default function App() {
                         );
                       })() : null}
                     </div>
-                  )) : (
+                  );}) : (
                     <div className="chat-empty-state">
                       Start with one idea, then ask for simple follow-up changes like “add login”, “make it mobile”, or “prepare it for Render”.
                     </div>
