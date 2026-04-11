@@ -24,6 +24,7 @@ const STORAGE_KEYS = {
   builderAssistantPrefs: "builder_assistant_prefs_v1",
   fullStackScope: "builder_full_stack_scope_v1",
   chatReplyPreference: "builder_chat_reply_preference_v1",
+  builderImprovementMode: "builder_improvement_mode_v1",
   rvTemplate: "builder_rv_template_v1",
   rvCampingProfile: "builder_rv_camping_profile_v1",
   generatedAppMonetization: "builder_generated_app_monetization_v1",
@@ -794,6 +795,14 @@ function isBuilderConversationRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
   return /(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|improve this ai|improve the ai|improve the builder ai|builder ai)/.test(text);
+}
+
+function isBuilderSuggestionRequest(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  const asksForSuggestions = /(what suggestion|what suggestions|suggestion|suggestions|ideas|recommendation|recommendations|smarter|better|beyyer|keep improving|improve)/.test(text);
+  const targetsBuilderAi = /(builder|ai|chat|assistant|this ai|builder ai|builder ui|builder workspace)/.test(text);
+  return asksForSuggestions && targetsBuilderAi;
 }
 
 function isFullStackRequest(message) {
@@ -1969,6 +1978,7 @@ export default function App() {
   const [chatAssistantMode, setChatAssistantMode] = useState("app");
   const [fullStackScope, setFullStackScope] = useState(() => loadFromStorage(STORAGE_KEYS.fullStackScope, "fullstack"));
   const [chatReplyPreference, setChatReplyPreference] = useState(() => loadFromStorage(STORAGE_KEYS.chatReplyPreference, "balanced"));
+  const [builderImprovementMode, setBuilderImprovementMode] = useState(() => loadFromStorage(STORAGE_KEYS.builderImprovementMode, "suggest"));
   const [builderAssistantPrefs, setBuilderAssistantPrefs] = useState(() => loadFromStorage(STORAGE_KEYS.builderAssistantPrefs, {
     name: "Builder Copilot",
     favoriteFocuses: ["preview", "clarity"],
@@ -2017,6 +2027,7 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.builderAssistantPrefs, builderAssistantPrefs), [builderAssistantPrefs]);
   useEffect(() => saveToStorage(STORAGE_KEYS.fullStackScope, fullStackScope), [fullStackScope]);
   useEffect(() => saveToStorage(STORAGE_KEYS.chatReplyPreference, chatReplyPreference), [chatReplyPreference]);
+  useEffect(() => saveToStorage(STORAGE_KEYS.builderImprovementMode, builderImprovementMode), [builderImprovementMode]);
 
   useEffect(() => {
     if (uiMode !== "chat") {
@@ -2407,6 +2418,48 @@ export default function App() {
       .filter((key) => actionMap[key]);
     return orderedKeys.slice(0, 4).map((key) => actionMap[key]);
   }, [builderAssistantPrefs]);
+  const smartBuilderUpgradeActions = useMemo(() => {
+    const curated = [
+      {
+        label: "Make preview bigger",
+        prompt: "improve this builder ui and make the preview larger on the side",
+        mode: "evolve",
+        reason: "Shows app changes faster so you can evaluate each improvement without extra clicks.",
+      },
+      {
+        label: "Simplify builder UI",
+        prompt: "simplify this ui and hide project details",
+        mode: "evolve",
+        reason: "Reduces clutter and keeps attention on chat, preview, and the next action.",
+      },
+      {
+        label: "Improve chat flow",
+        prompt: "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+        mode: "evolve",
+        reason: "Makes suggestions easier to follow and avoids repetitive responses.",
+      },
+      {
+        label: "Shrink header",
+        prompt: "shrink the header and give more space to chat and preview",
+        mode: "evolve",
+        reason: "Creates more working space so each improvement cycle feels faster.",
+      },
+      {
+        label: "Improve mobile",
+        prompt: "improve this builder mobile layout and keep preview readable",
+        mode: "evolve",
+        reason: "Keeps the builder usable on phone-sized screens while preserving important context.",
+      },
+    ];
+    const merged = [...curated, ...builderAssistantQuickActions.map((item) => ({ ...item, mode: item.mode || "evolve" }))];
+    const seen = new Set();
+    return merged.filter((item) => {
+      const key = String(item.label || item.prompt || "").toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 6);
+  }, [builderAssistantQuickActions]);
 
   function buildScopedChatMessage(message) {
     const text = String(message || "").trim();
@@ -2803,6 +2856,19 @@ export default function App() {
     }
   }
 
+  function isApplyConfirmationMessage(text) {
+    const value = String(text || "").trim().toLowerCase();
+    if (!value) return false;
+    return /^(yes|ye|yep|yeah|sure|ok|okay|do it|go ahead|apply|run it|continue|keep going)\b/.test(value);
+  }
+
+  function shouldAutoApplyImprovements(text, preference) {
+    if (preference === "apply") return true;
+    const value = String(text || "").trim().toLowerCase();
+    if (!value) return false;
+    return /(improve|improvement|make it better|optimi[sz]e|enhance|upgrade|polish|refine|fix it|apply now|auto apply|keep improving)/.test(value);
+  }
+
   function appendBuilderChatMessage(message) {
     setBuilderChatHistory((prev) => [{
       id: uid("chat"),
@@ -3038,6 +3104,7 @@ export default function App() {
       builder_assistant_prefs: builderAssistantPrefs,
       full_stack_scope: fullStackScope,
       chat_reply_preference: chatReplyPreference,
+      builder_improvement_mode: builderImprovementMode,
       selected_preview_route: selectedPreviewRoute,
     };
   }
@@ -3070,6 +3137,7 @@ export default function App() {
     if (snapshot.builder_assistant_prefs && typeof snapshot.builder_assistant_prefs === "object") setBuilderAssistantPrefs(snapshot.builder_assistant_prefs);
     if (typeof snapshot.full_stack_scope === "string") setFullStackScope(snapshot.full_stack_scope);
     if (typeof snapshot.chat_reply_preference === "string") setChatReplyPreference(snapshot.chat_reply_preference);
+    if (typeof snapshot.builder_improvement_mode === "string") setBuilderImprovementMode(snapshot.builder_improvement_mode);
     if (typeof snapshot.selected_preview_route === "string") setSelectedPreviewRoute(snapshot.selected_preview_route);
   }
 
@@ -3096,6 +3164,8 @@ export default function App() {
     const message = String(rawMessage || builderChatDraft).trim();
     if (!message || isChatSubmitting) return;
     const scopedMessage = buildScopedChatMessage(message);
+    const prefersAutoApply = builderImprovementMode === "auto" || shouldAutoApplyImprovements(message, chatReplyPreference);
+    const applyConfirmation = isApplyConfirmationMessage(message);
 
     const resolvedMode = modeOverride || (projectId ? "mutate" : "evolve");
     appendBuilderChatMessage({
@@ -3110,6 +3180,25 @@ export default function App() {
 
     try {
       setIsChatSubmitting(true);
+
+      if (applyConfirmation && latestAssistantLeadAction?.lead?.prompt) {
+        const action = latestAssistantLeadAction.lead;
+        const applyMode = action.mode || resolvedMode;
+        const applyPrompt = String(action.prompt || scopedMessage).trim();
+        const summary = applyMode === "mutate"
+          ? await handleGeneratedAppMutation(applyPrompt)
+          : await runBuilderBrain(applyPrompt);
+
+        appendBuilderChatMessage({
+          role: "assistant",
+          text: `Applied your last suggested improvement: ${action.label || "Next improvement"}.`,
+          meta: summary?.mutationSummary?.length
+            ? summary.mutationSummary.slice(0, 3).join(" • ")
+            : (summary?.builderInsight || "Improvement applied."),
+        });
+        return;
+      }
+
       if (isBuilderWorkspaceRequest(message)) {
         const workspaceSummary = applyBuilderWorkspaceCommand(message);
         setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
@@ -3211,6 +3300,24 @@ export default function App() {
       });
 
       if (!agentData?.ready_to_apply) {
+        const suggestedAction = Array.isArray(agentData?.suggested_actions) ? agentData.suggested_actions[0] : null;
+        if (prefersAutoApply && suggestedAction?.prompt && agentData?.response_type !== "clarify") {
+          const applyMode = suggestedAction.mode || resolvedMode;
+          const applyPrompt = String(suggestedAction.prompt || scopedMessage).trim();
+          const summary = applyMode === "mutate"
+            ? await handleGeneratedAppMutation(applyPrompt)
+            : await runBuilderBrain(applyPrompt);
+
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: `I applied this improvement now: ${suggestedAction.label || "Suggested improvement"}.`,
+            meta: summary?.mutationSummary?.length
+              ? summary.mutationSummary.slice(0, 3).join(" • ")
+              : (summary?.builderInsight || "Applied from suggested action."),
+          });
+          return;
+        }
+
         setBuilderInsight(
           agentData?.suggested_actions?.[0]?.reason
           || agentData?.assistant_message
@@ -4819,7 +4926,8 @@ export default function App() {
           display: grid;
         }
         .chat-conversation-wrap .panel-card {
-          height: var(--chat-window-height);
+          height: auto;
+          max-height: min(72vh, 760px);
           display: flex;
           flex-direction: column;
         }
@@ -4829,8 +4937,8 @@ export default function App() {
           display: grid;
         }
         .chat-conversation-wrap .chat-thread {
-          max-height: none;
-          height: 100%;
+          max-height: clamp(300px, 56vh, 620px);
+          height: auto;
         }
         .chat-unread-row {
           display: flex;
@@ -4921,7 +5029,7 @@ export default function App() {
           .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
           .chat-composer-sticky { position: static; }
           .chat-conversation-wrap .panel-card { height: auto; }
-          .chat-conversation-wrap .chat-thread { height: auto; max-height: 560px; }
+          .chat-conversation-wrap .chat-thread { height: auto; max-height: 480px; }
           .chat-preview-rail { position: static; }
           .chat-preview-frame { min-height: 420px; }
         }
@@ -6330,6 +6438,24 @@ export default function App() {
                             className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
                             type="button"
                             onClick={() => setChatReplyPreference(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="chat-quick-ideas">
+                      <div className="muted">Improvement mode</div>
+                      <div className="chat-chip-row compact">
+                        {[
+                          ["suggest", "Suggest only"],
+                          ["auto", "Suggest + auto-apply"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            className={`chat-chip ${builderImprovementMode === value ? "active" : ""}`}
+                            type="button"
+                            onClick={() => setBuilderImprovementMode(value)}
                           >
                             {label}
                           </button>
