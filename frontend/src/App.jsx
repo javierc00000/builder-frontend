@@ -1964,7 +1964,8 @@ export default function App() {
   const [globalKnowledgeTopics, setGlobalKnowledgeTopics] = useState([]);
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
-  const [chatScrollTick, setChatScrollTick] = useState(0);
+  const [hasUnreadAssistantReply, setHasUnreadAssistantReply] = useState(false);
+  const [isChatThreadNearTop, setIsChatThreadNearTop] = useState(true);
   const [chatAssistantMode, setChatAssistantMode] = useState("app");
   const [fullStackScope, setFullStackScope] = useState(() => loadFromStorage(STORAGE_KEYS.fullStackScope, "fullstack"));
   const [chatReplyPreference, setChatReplyPreference] = useState(() => loadFromStorage(STORAGE_KEYS.chatReplyPreference, "balanced"));
@@ -1985,6 +1986,8 @@ export default function App() {
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
   const projectSnapshotHydratingRef = useRef(false);
   const projectSnapshotSyncReadyRef = useRef(false);
+  const chatConversationRef = useRef(null);
+  const chatThreadRef = useRef(null);
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
   useEffect(() => saveToStorage(STORAGE_KEYS.modules, activeModules), [activeModules]);
@@ -2014,6 +2017,12 @@ export default function App() {
   useEffect(() => saveToStorage(STORAGE_KEYS.builderAssistantPrefs, builderAssistantPrefs), [builderAssistantPrefs]);
   useEffect(() => saveToStorage(STORAGE_KEYS.fullStackScope, fullStackScope), [fullStackScope]);
   useEffect(() => saveToStorage(STORAGE_KEYS.chatReplyPreference, chatReplyPreference), [chatReplyPreference]);
+
+  useEffect(() => {
+    if (uiMode !== "chat") {
+      setHasUnreadAssistantReply(false);
+    }
+  }, [uiMode]);
 
   useEffect(() => {
     setBuilderProjectMemory((prev) => ({
@@ -2298,6 +2307,10 @@ export default function App() {
   }, [builderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
   const statusCardPrimaryAction = uiMode === "chat" ? null : primaryNextAction;
   const statusCardSecondaryActions = uiMode === "chat" ? [] : secondaryNextActions;
+  const latestAssistantChatMessage = useMemo(
+    () => builderChatHistory.find((item) => item.role === "assistant") || null,
+    [builderChatHistory],
+  );
   const currentChatFocusLabel = useMemo(() => {
     const lastBuilderRequest = String(builderProjectMemory.last_builder_workspace_request || "").trim();
     if (lastBuilderRequest) {
@@ -2354,6 +2367,7 @@ export default function App() {
   const latestOrchestrationEntry = useMemo(() => orchestrationHistory[0] || null, [orchestrationHistory]);
   const builderChatQuickIdeas = useMemo(() => [
     projectId ? "Keep improving this app" : "Build the first version",
+    "Start fresh topic",
     "Improve this builder UI",
     "Add backend auth API and frontend login flow",
     "Build a booking app for a small business",
@@ -2769,13 +2783,47 @@ export default function App() {
     setLivePreviewDoc(previewDoc);
   }, [generatedCodeFiles, generatedComponents, generatedRoutes, featureState.appType, featureState.builderMode, previewRoutes, selectedPreviewRoute, previewAuthState, previewAuthMode, prompt]);
 
+  function scrollChatThreadToNewest(behavior = "smooth") {
+    const threadNode = chatThreadRef.current || chatConversationRef.current?.querySelector(".chat-thread");
+    if (!threadNode) return;
+    threadNode.scrollTo({ top: 0, behavior });
+  }
+
+  function jumpToNewestReply() {
+    scrollChatThreadToNewest("smooth");
+    setHasUnreadAssistantReply(false);
+  }
+
+  function handleChatThreadScroll(event) {
+    const top = event?.currentTarget?.scrollTop || 0;
+    const nearTop = top <= 72;
+    setIsChatThreadNearTop(nearTop);
+    if (nearTop) {
+      setHasUnreadAssistantReply(false);
+    }
+  }
+
   function appendBuilderChatMessage(message) {
     setBuilderChatHistory((prev) => [{
       id: uid("chat"),
       time: nowLabel(),
       ...message,
     }, ...prev].slice(0, 40));
-    setChatScrollTick((prev) => prev + 1);
+    const isAssistantMessage = String(message?.role || "") === "assistant";
+    const shouldStickToNewest = !isAssistantMessage || isChatThreadNearTop;
+    if (uiMode === "chat") {
+      window.requestAnimationFrame(() => {
+        const conversationNode = chatConversationRef.current;
+        if (!conversationNode) return;
+        conversationNode.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (shouldStickToNewest) {
+          scrollChatThreadToNewest("smooth");
+          setHasUnreadAssistantReply(false);
+        } else if (isAssistantMessage) {
+          setHasUnreadAssistantReply(true);
+        }
+      });
+    }
   }
 
   function dismissPrimaryNextAction() {
@@ -4630,6 +4678,13 @@ export default function App() {
         .chat-builder-shell { display: grid; grid-template-columns: .9fr 1.1fr; gap: 20px; margin-bottom: 18px; align-items: start; }
         .chat-builder-shell.with-preview { grid-template-columns: minmax(320px, .78fr) minmax(560px, 1.22fr); }
         .chat-builder-shell.compact { grid-template-columns: minmax(0, 1fr); }
+        .chat-builder-shell.with-preview {
+          --chat-sticky-top: 14px;
+          --chat-sticky-gap: 14px;
+        }
+        .chat-builder-shell {
+          --chat-window-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
+        }
         .chat-thread { display: grid; gap: 12px; max-height: 860px; overflow: auto; padding-right: 6px; }
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
         .chat-message.user { background: rgba(102,217,239,.08); }
@@ -4751,7 +4806,79 @@ export default function App() {
           text-underline-offset: 3px;
         }
         .chat-side-stack { display: grid; gap: 16px; }
-        .chat-preview-rail { display: grid; gap: 18px; position: sticky; top: 18px; }
+        .chat-composer-sticky {
+          position: sticky;
+          top: var(--chat-sticky-top, 14px);
+          z-index: 3;
+          max-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
+          overflow: auto;
+          padding-right: 4px;
+        }
+        .chat-conversation-wrap {
+          scroll-margin-top: 96px;
+          display: grid;
+        }
+        .chat-conversation-wrap .panel-card {
+          height: var(--chat-window-height);
+          display: flex;
+          flex-direction: column;
+        }
+        .chat-conversation-wrap .panel-card > div:last-child {
+          flex: 1;
+          min-height: 0;
+          display: grid;
+        }
+        .chat-conversation-wrap .chat-thread {
+          max-height: none;
+          height: 100%;
+        }
+        .chat-unread-row {
+          display: flex;
+          justify-content: flex-start;
+          margin-bottom: 10px;
+        }
+        .chat-unread-pill {
+          border: 1px solid rgba(102,217,239,.4);
+          background: rgba(102,217,239,.15);
+          color: var(--text);
+          border-radius: 999px;
+          padding: 7px 12px;
+          cursor: pointer;
+          font-weight: 700;
+        }
+        .chat-unread-pill:hover {
+          background: rgba(102,217,239,.24);
+        }
+        .chat-live-reply {
+          display: grid;
+          gap: 8px;
+          padding: 12px 14px;
+          border-radius: 16px;
+          border: 1px solid rgba(139,92,246,.32);
+          background: rgba(139,92,246,.12);
+        }
+        .chat-live-reply-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .chat-live-reply-body {
+          white-space: pre-wrap;
+          line-height: 1.55;
+          max-height: 180px;
+          overflow: auto;
+        }
+        .chat-preview-rail {
+          display: grid;
+          gap: 18px;
+          position: sticky;
+          top: var(--chat-sticky-top, 14px);
+          max-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
+          overflow: auto;
+          padding-right: 4px;
+        }
         .chat-preview-frame {
           width: 100%;
           min-height: 680px;
@@ -4792,6 +4919,9 @@ export default function App() {
         .chat-next-actions { display: flex; flex-wrap: wrap; gap: 10px; }
         @media (max-width: 1120px) {
           .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
+          .chat-composer-sticky { position: static; }
+          .chat-conversation-wrap .panel-card { height: auto; }
+          .chat-conversation-wrap .chat-thread { height: auto; max-height: 560px; }
           .chat-preview-rail { position: static; }
           .chat-preview-frame { min-height: 420px; }
         }
@@ -6063,300 +6193,350 @@ export default function App() {
       ) : uiMode === "chat" ? (
         <div className={`chat-builder-shell ${livePreviewDoc ? "with-preview" : "compact"}`}>
           <div className="chat-side-stack">
-            <Panel
-              title="Build With Chat"
-              subtitle="Type what you want, press Go, and use one chat to build the app, change frontend and backend, or improve this builder itself."
-              actions={
-                <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
-                  {showChatDetails ? "Hide project details" : "Project details"}
-                </button>
-              }
-            >
-              <div className="chat-composer">
-                <div className="chat-composer-shell">
-                  <div className="chat-composer-header">
-                    <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
-                    <p>{projectId ? "Keep the same project moving with one clear request at a time, then press Go." : "Start with one plain-language sentence, then press Go. The builder will ask follow-up questions if anything is missing."}</p>
-                  </div>
-                  <div className="chat-mode-row">
-                    <span className="chat-project-state">
-                      {projectId
-                        ? "One chat is active. Ask for app changes, frontend + backend work, or builder improvements."
-                        : "One chat is active. Describe the app, ask for full-stack work, or say if you want to improve this builder."}
-                    </span>
-                  </div>
-                  <div className="chat-guidance-strip">
-                    <div className="chat-guidance-tile">
-                      <strong>Current focus</strong>
-                      <div>{currentChatFocusLabel}</div>
+            <div className="chat-composer-sticky">
+              <Panel
+                title="Build With Chat"
+                subtitle="Type what you want, press Go, and use one chat to build the app, change frontend and backend, or improve this builder itself."
+                actions={
+                  <button className="ghost-pill" type="button" onClick={() => setShowChatDetails((prev) => !prev)}>
+                    {showChatDetails ? "Hide project details" : "Project details"}
+                  </button>
+                }
+              >
+                <div className="chat-composer">
+                  <div className="chat-composer-shell">
+                    <div className="chat-composer-header">
+                      <h3>{projectId ? "Tell me the next change" : "Describe the app you want"}</h3>
+                      <p>{projectId ? "Keep the same project moving with one clear request at a time, then press Go." : "Start with one plain-language sentence, then press Go. The builder will ask follow-up questions if anything is missing."}</p>
                     </div>
-                    <div className="chat-guidance-tile">
-                      <strong>Best prompt</strong>
-                      <div>
+                    <div className="chat-mode-row">
+                      <span className="chat-project-state">
                         {projectId
-                          ? "Ask for one useful change. You can include app changes, frontend + backend work, or builder improvements in the same chat."
-                          : "Say what you want to build. You can also mention frontend + backend together if you need both."}
-                      </div>
+                          ? "One chat is active. Ask for app changes, frontend + backend work, or builder improvements."
+                          : "One chat is active. Describe the app, ask for full-stack work, or say if you want to improve this builder."}
+                      </span>
                     </div>
-                    <div className="chat-guidance-tile">
-                      <strong>How it works</strong>
-                      <div>The chat decides whether your message is about the app, full-stack changes, or this builder.</div>
-                    </div>
-                  </div>
-                  <textarea
-                    className="input"
-                    value={builderChatDraft}
-                    onChange={(e) => setBuilderChatDraft(e.target.value)}
-                    placeholder={projectId
-                      ? "Example: add saved reports and backend endpoints, or improve this builder UI"
-                      : "Example: build a client portal with frontend dashboard and backend API"}
-                  />
-                  {builderAssistantPrefs?.pinnedGoals?.length ? (
-                    <div className="chat-builder-memory">
-                      <div>
-                        <strong>Saved builder goals</strong>
-                        <div className="muted">You can still ask this same chat to improve the builder itself.</div>
+                    <div className="chat-guidance-strip">
+                      <div className="chat-guidance-tile">
+                        <strong>Current focus</strong>
+                        <div>{currentChatFocusLabel}</div>
                       </div>
-                      <div>
-                        <div className="chat-chip-row compact">
-                          {(builderAssistantPrefs.pinnedGoals || []).map((goal) => (
-                            <button key={goal} className="chat-chip builder-pref-active" type="button" onClick={() => setBuilderChatDraft(goal)}>
-                              {goal}
-                            </button>
-                          ))}
-                          <button className="chat-chip" type="button" onClick={() => pinBuilderAssistantGoal()}>
-                            Pin current goal
-                          </button>
+                      <div className="chat-guidance-tile">
+                        <strong>Best prompt</strong>
+                        <div>
+                          {projectId
+                            ? "Ask for one useful change. You can include app changes, frontend + backend work, or builder improvements in the same chat."
+                            : "Say what you want to build. You can also mention frontend + backend together if you need both."}
                         </div>
-                        {(builderAssistantPrefs.pinnedGoals || []).length ? (
-                          <div className="chat-chip-row compact" style={{ marginTop: 8 }}>
-                            {(builderAssistantPrefs.pinnedGoals || []).slice(0, 2).map((goal) => (
-                              <button key={`remove_${goal}`} className="chat-secondary-link" type="button" onClick={() => removeBuilderAssistantGoal(goal)}>
-                                Remove: {goal}
+                      </div>
+                      <div className="chat-guidance-tile">
+                        <strong>How it works</strong>
+                        <div>The chat decides whether your message is about the app, full-stack changes, or this builder.</div>
+                      </div>
+                    </div>
+                    <textarea
+                      className="input"
+                      value={builderChatDraft}
+                      onChange={(e) => setBuilderChatDraft(e.target.value)}
+                      placeholder={projectId
+                        ? "Example: add saved reports and backend endpoints, or improve this builder UI"
+                        : "Example: build a client portal with frontend dashboard and backend API"}
+                    />
+                    {builderAssistantPrefs?.pinnedGoals?.length ? (
+                      <div className="chat-builder-memory">
+                        <div>
+                          <strong>Saved builder goals</strong>
+                          <div className="muted">You can still ask this same chat to improve the builder itself.</div>
+                        </div>
+                        <div>
+                          <div className="chat-chip-row compact">
+                            {(builderAssistantPrefs.pinnedGoals || []).map((goal) => (
+                              <button key={goal} className="chat-chip builder-pref-active" type="button" onClick={() => setBuilderChatDraft(goal)}>
+                                {goal}
                               </button>
+                            ))}
+                            <button className="chat-chip" type="button" onClick={() => pinBuilderAssistantGoal()}>
+                              Pin current goal
+                            </button>
+                          </div>
+                          {(builderAssistantPrefs.pinnedGoals || []).length ? (
+                            <div className="chat-chip-row compact" style={{ marginTop: 8 }}>
+                              {(builderAssistantPrefs.pinnedGoals || []).slice(0, 2).map((goal) => (
+                                <button key={`remove_${goal}`} className="chat-secondary-link" type="button" onClick={() => removeBuilderAssistantGoal(goal)}>
+                                  Remove: {goal}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        {(builderAssistantPrefs.recentRequests || []).length ? (
+                          <div className="chat-chip-row compact">
+                            {builderAssistantPrefs.recentRequests.slice(0, 2).map((item) => (
+                              <button key={item} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(item)}>{item}</button>
                             ))}
                           </div>
                         ) : null}
                       </div>
-                      {(builderAssistantPrefs.recentRequests || []).length ? (
-                        <div className="chat-chip-row compact">
-                          {builderAssistantPrefs.recentRequests.slice(0, 2).map((item) => (
-                            <button key={item} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(item)}>{item}</button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="chat-quick-ideas">
-                    <div className="muted">Quick starts</div>
-                    <div className="chat-chip-row compact">
-                      {visibleChatQuickIdeas.map((idea) => (
-                        <button key={idea} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea)}>{idea}</button>
-                      ))}
-                      {fullStackQuickActions.slice(0, 2).map((idea) => (
-                        <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
-                      ))}
-                      {builderAssistantQuickActions.slice(0, 1).map((idea) => (
-                        <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="chat-quick-ideas">
-                    <div className="muted">Conversation style</div>
-                    <div className="chat-chip-row compact">
-                      {[
-                        ["balanced", "Balanced"],
-                        ["answer", "Answer only"],
-                        ["clarify", "Ask questions"],
-                        ["apply", "Apply now"],
-                      ].map(([value, label]) => (
-                        <button
-                          key={value}
-                          className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
-                          type="button"
-                          onClick={() => setChatReplyPreference(value)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="chat-composer-actions">
-                    <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
-                      {isChatSubmitting ? "Working..." : "Go"}
-                    </button>
-                    <button className="chat-secondary-link" type="button" onClick={() => setShowStarterExamples((prev) => !prev)}>
-                      {showStarterExamples ? "Hide examples" : "More examples"}
-                    </button>
-                    <button className="chat-secondary-link" type="button" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>
-                      Clear chat
-                    </button>
-                  </div>
-                </div>
-                {showStarterExamples ? (
-                  <div className="module-list" style={{ marginTop: 12 }}>
-                    <div className="module-item">
-                      <div className="module-top">
-                        <strong>Starter examples</strong>
-                        <span className="tag">Optional</span>
-                      </div>
-                      <div className="chat-chip-row">
-                        {generalStarterExamples.map((example) => (
+                    ) : null}
+                    <div className="chat-quick-ideas">
+                      <div className="muted">Quick starts</div>
+                      <div className="chat-chip-row compact">
+                        {visibleChatQuickIdeas.map((idea) => (
                           <button
-                            key={example.label}
+                            key={idea}
                             className="chat-chip"
                             type="button"
-                            onClick={() => setBuilderChatDraft(example.prompt)}
+                            onClick={() => {
+                              if (idea === "Start fresh topic") {
+                                setBuilderProjectMemory((prev) => ({
+                                  ...prev,
+                                  project_summary: "",
+                                  app_type: "",
+                                  builder_mode: "",
+                                  systems: [],
+                                  decisions: {},
+                                  unresolved_questions: [],
+                                }));
+                                setBuilderChatDraft("let's start a different app idea from scratch");
+                                setStatusMessage("Starting a fresh conversation topic.");
+                                setBuilderInsight("Old project context was cleared for your next message.");
+                                return;
+                              }
+                              setBuilderChatDraft(idea);
+                            }}
                           >
-                            {example.label}
+                            {idea}
+                          </button>
+                        ))}
+                        {fullStackQuickActions.slice(0, 2).map((idea) => (
+                          <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                        ))}
+                        {builderAssistantQuickActions.slice(0, 1).map((idea) => (
+                          <button key={idea.label} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(idea.prompt)}>{idea.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="chat-quick-ideas">
+                      <div className="muted">Conversation style</div>
+                      <div className="chat-chip-row compact">
+                        {[
+                          ["balanced", "Balanced"],
+                          ["answer", "Answer only"],
+                          ["clarify", "Ask questions"],
+                          ["apply", "Apply now"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
+                            type="button"
+                            onClick={() => setChatReplyPreference(value)}
+                          >
+                            {label}
                           </button>
                         ))}
                       </div>
-                      <div className="muted" style={{ marginTop: 10 }}>
-                        Pick one example to fill the chat box, then press Go.
-                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-            </Panel>
-
-            <Panel
-              title="Conversation"
-              subtitle="Keep building in the same chat."
-            >
-              <div className="chat-thread" key={chatScrollTick}>
-                {builderChatHistory.length ? builderChatHistory.map((message) => (
-                  <div key={message.id} className={`chat-message ${message.role}`}>
-                    <div className="chat-meta-row">
-                      <div className="chat-role">
-                        <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
-                        {message.role === "user" ? "You" : "Builder"}
-                      </div>
-                      <span className="muted">{message.time}</span>
+                    <div className="chat-composer-actions">
+                      <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
+                        {isChatSubmitting ? "Working..." : "Go"}
+                      </button>
+                      <button className="chat-secondary-link" type="button" onClick={() => setShowStarterExamples((prev) => !prev)}>
+                        {showStarterExamples ? "Hide examples" : "More examples"}
+                      </button>
+                      <button className="chat-secondary-link" type="button" onClick={() => { setBuilderChatHistory([]); setBuilderChatDraft(""); setBuilderProjectMemory({}); }}>
+                        Clear chat
+                      </button>
                     </div>
-                    <div className="chat-body">{message.text}</div>
-                    {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
-                    {Array.isArray(message.questions) && message.questions.length ? (
-                      <div className="chat-question-list">
-                        {message.questions.map((question) => (
-                          <div key={question} className="chat-question-pill">{question}</div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {message.role === "assistant" && message.advice ? (
-                      <div className="chat-advice-stack">
-                        {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
-                          <div key={`upgrade_${item.label}`} className="chat-advice-card">
-                            <strong>Good idea: {item.label}</strong>
-                            <div className="muted">{item.reason}</div>
-                          </div>
-                        )) : null}
-                        {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
-                          <div key={`caution_${item.label}`} className="chat-advice-card">
-                            <strong>Possible problem: {item.label}</strong>
-                            <div className="muted">{item.reason}</div>
-                          </div>
-                        )) : null}
-                        {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
-                          <div key={`better_${item.label}`} className="chat-advice-card">
-                            <strong>Better idea: {item.label}</strong>
-                            <div className="muted">{item.reason}</div>
-                          </div>
-                        )) : null}
-                      </div>
-                    ) : null}
-                    {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
-                      <div className="chat-advice-stack">
-                        {message.researchFindings.slice(0, 4).map((item) => (
-                          <a
-                            key={`research_${item.url || item.title}`}
-                            className="chat-advice-card"
-                            href={item.url || "#"}
-                            target="_blank"
-                            rel="noreferrer"
+                    {latestAssistantChatMessage ? (
+                      <div className="chat-live-reply">
+                        <div className="chat-live-reply-head">
+                          <strong>Latest AI reply</strong>
+                          <button
+                            className="chat-secondary-link"
+                            type="button"
+                            onClick={() => chatConversationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
                           >
-                            <strong>Helpful source: {item.title}</strong>
-                            <div className="muted">{item.snippet || "Source found for this topic."}</div>
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {message.role === "assistant" && message.researchRecommendation?.prompt ? (
-                      <div className="chat-advice-stack">
-                        <div className="chat-advice-card">
-                          <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
-                          <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
+                            View full conversation
+                          </button>
                         </div>
+                        <div className="chat-live-reply-body">{latestAssistantChatMessage.text}</div>
                       </div>
                     ) : null}
-                    {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
-                      <div className="chat-advice-stack">
-                        {message.knowledgeHits.map((item) => (
-                          <a
-                            key={`knowledge_${item.url || item.title}`}
-                            className="chat-advice-card"
-                            href={item.url || "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <strong>Saved note: {item.title}</strong>
-                            <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
-                      const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
-                      const visibleActions = message.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
-                      if (!visibleActions.length) return null;
-                      const leadAction = visibleActions[0];
-                      const extraActions = visibleActions.slice(1);
-                      return (
-                        <div className="chat-action-row">
-                          {leadAction?.reason ? (
-                            <div className="chat-advice-card" style={{ width: "100%" }}>
-                              <strong>{leadAction.label}</strong>
-                              <div className="muted">{leadAction.reason}</div>
-                              <div className="chat-action-row" style={{ marginTop: 10 }}>
-                                <button
-                                  className="pill primary"
-                                  type="button"
-                                  onClick={() => applyAssistantSuggestedAction(leadAction)}
-                                >
-                                  Do this next
-                                </button>
-                                <button
-                                  className="chat-secondary-link"
-                                  type="button"
-                                  onClick={() => dismissAssistantSuggestedAction(leadAction)}
-                                >
-                                  Dismiss
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                          {extraActions.map((action) => (
+                  </div>
+                  {showStarterExamples ? (
+                    <div className="module-list" style={{ marginTop: 12 }}>
+                      <div className="module-item">
+                        <div className="module-top">
+                          <strong>Starter examples</strong>
+                          <span className="tag">Optional</span>
+                        </div>
+                        <div className="chat-chip-row">
+                          {generalStarterExamples.map((example) => (
                             <button
-                              key={`${message.id}_${action.label}_${action.prompt}`}
+                              key={example.label}
                               className="chat-chip"
                               type="button"
-                              onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
+                              onClick={() => setBuilderChatDraft(example.prompt)}
                             >
-                              {action.label}
+                              {example.label}
                             </button>
                           ))}
                         </div>
-                      );
-                    })() : null}
+                        <div className="muted" style={{ marginTop: 10 }}>
+                          Pick one example to fill the chat box, then press Go.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </Panel>
+            </div>
+
+            <div ref={chatConversationRef} className="chat-conversation-wrap">
+              <Panel
+                title="Conversation"
+                subtitle="Keep building in the same chat."
+              >
+                {hasUnreadAssistantReply ? (
+                  <div className="chat-unread-row">
+                    <button className="chat-unread-pill" type="button" onClick={jumpToNewestReply}>
+                      New reply
+                    </button>
                   </div>
-                )) : (
-                  <div className="chat-empty-state">
-                    Start with one idea, then ask for simple follow-up changes like “add login”, “make it mobile”, or “prepare it for Render”.
-                  </div>
-                )}
-              </div>
-            </Panel>
+                ) : null}
+                <div className="chat-thread" ref={chatThreadRef} onScroll={handleChatThreadScroll}>
+                  {builderChatHistory.length ? builderChatHistory.map((message) => (
+                    <div key={message.id} className={`chat-message ${message.role}`}>
+                      <div className="chat-meta-row">
+                        <div className="chat-role">
+                          <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
+                          {message.role === "user" ? "You" : "Builder"}
+                        </div>
+                        <span className="muted">{message.time}</span>
+                      </div>
+                      <div className="chat-body">{message.text}</div>
+                      {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
+                      {Array.isArray(message.questions) && message.questions.length ? (
+                        <div className="chat-question-list">
+                          {message.questions.map((question) => (
+                            <div key={question} className="chat-question-pill">{question}</div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && message.advice ? (
+                        <div className="chat-advice-stack">
+                          {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
+                            <div key={`upgrade_${item.label}`} className="chat-advice-card">
+                              <strong>Good idea: {item.label}</strong>
+                              <div className="muted">{item.reason}</div>
+                            </div>
+                          )) : null}
+                          {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
+                            <div key={`caution_${item.label}`} className="chat-advice-card">
+                              <strong>Possible problem: {item.label}</strong>
+                              <div className="muted">{item.reason}</div>
+                            </div>
+                          )) : null}
+                          {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
+                            <div key={`better_${item.label}`} className="chat-advice-card">
+                              <strong>Better idea: {item.label}</strong>
+                              <div className="muted">{item.reason}</div>
+                            </div>
+                          )) : null}
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
+                        <div className="chat-advice-stack">
+                          {message.researchFindings.slice(0, 4).map((item) => (
+                            <a
+                              key={`research_${item.url || item.title}`}
+                              className="chat-advice-card"
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <strong>Helpful source: {item.title}</strong>
+                              <div className="muted">{item.snippet || "Source found for this topic."}</div>
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && message.researchRecommendation?.prompt ? (
+                        <div className="chat-advice-stack">
+                          <div className="chat-advice-card">
+                            <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
+                            <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
+                          </div>
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
+                        <div className="chat-advice-stack">
+                          {message.knowledgeHits.map((item) => (
+                            <a
+                              key={`knowledge_${item.url || item.title}`}
+                              className="chat-advice-card"
+                              href={item.url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <strong>Saved note: {item.title}</strong>
+                              <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
+                        const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
+                        const visibleActions = message.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
+                        if (!visibleActions.length) return null;
+                        const leadAction = visibleActions[0];
+                        const extraActions = visibleActions.slice(1);
+                        return (
+                          <div className="chat-action-row">
+                            {leadAction?.reason ? (
+                              <div className="chat-advice-card" style={{ width: "100%" }}>
+                                <strong>{leadAction.label}</strong>
+                                <div className="muted">{leadAction.reason}</div>
+                                <div className="chat-action-row" style={{ marginTop: 10 }}>
+                                  <button
+                                    className="pill primary"
+                                    type="button"
+                                    onClick={() => applyAssistantSuggestedAction(leadAction)}
+                                  >
+                                    Do this next
+                                  </button>
+                                  <button
+                                    className="chat-secondary-link"
+                                    type="button"
+                                    onClick={() => dismissAssistantSuggestedAction(leadAction)}
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                            {extraActions.map((action) => (
+                              <button
+                                key={`${message.id}_${action.label}_${action.prompt}`}
+                                className="chat-chip"
+                                type="button"
+                                onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })() : null}
+                    </div>
+                  )) : (
+                    <div className="chat-empty-state">
+                      Start with one idea, then ask for simple follow-up changes like “add login”, “make it mobile”, or “prepare it for Render”.
+                    </div>
+                  )}
+                </div>
+              </Panel>
+            </div>
 
             <div className="chat-status-card">
               <div className="chat-status-head">
