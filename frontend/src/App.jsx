@@ -787,8 +787,13 @@ function simplifyInsightMessage(message, hasProject) {
 function isBuilderWorkspaceRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
-  if (/(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|improve this ai)/.test(text)) return true;
   return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui)/.test(text);
+}
+
+function isBuilderConversationRequest(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  return /(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|improve this ai|improve the ai|improve the builder ai|builder ai)/.test(text);
 }
 
 function isFullStackRequest(message) {
@@ -2255,6 +2260,9 @@ export default function App() {
     if (!text) return text;
     if (isFullStackRequest(text)) {
       return `Full-stack request covering frontend and backend: ${text}`;
+    }
+    if (isBuilderConversationRequest(text) && !isBuilderWorkspaceRequest(text)) {
+      return `Builder improvement request: ${text}`;
     }
     return text;
   }
