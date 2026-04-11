@@ -1397,6 +1397,18 @@ function applyLayoutCommand(command, prevLayout, activeModules) {
     notes.push("Focused the workspace on preview-first mode.");
   }
 
+  if (/(improve this builder ui|improve the builder ui|improve builder ui|builder ui)/.test(lower) && !notes.length) {
+    nextLayout.mode = "workspace";
+    nextLayout.shell = "focus";
+    nextLayout.split = true;
+    nextLayout.sidebar = false;
+    nextLayout.inspector = false;
+    nextLayout.dense = false;
+    nextLayout.previewStyle = "spotlight";
+    moduleAdds.push("split_workspace", "live_preview", "quick_actions");
+    notes.push("Applied a cleaner builder-first layout with a larger preview area.");
+  }
+
   if (/(return to classic layout|classic layout|reset layout|default layout)/.test(lower)) {
     return {
       layout: {
@@ -1967,7 +1979,12 @@ export default function App() {
   const [showStarterExamples, setShowStarterExamples] = useState(false);
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [deployExportTarget, setDeployExportTarget] = useState("");
+  const [savedProjectList, setSavedProjectList] = useState([]);
+  const [isProjectListLoading, setIsProjectListLoading] = useState(false);
+  const [restoreProjectIdInput, setRestoreProjectIdInput] = useState("");
   const reportCounterRef = useRef(loadFromStorage(STORAGE_KEYS.reportCounter, 1));
+  const projectSnapshotHydratingRef = useRef(false);
+  const projectSnapshotSyncReadyRef = useRef(false);
 
   useEffect(() => saveToStorage(STORAGE_KEYS.prompt, prompt), [prompt]);
   useEffect(() => saveToStorage(STORAGE_KEYS.modules, activeModules), [activeModules]);
@@ -2031,6 +2048,128 @@ export default function App() {
     }
     checkHealth();
   }, []);
+
+  useEffect(() => {
+    projectSnapshotHydratingRef.current = false;
+    projectSnapshotSyncReadyRef.current = false;
+  }, [projectId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProjectSnapshotIfNeeded() {
+      if (apiStatus !== "connected") {
+        projectSnapshotSyncReadyRef.current = true;
+        return;
+      }
+      if (!projectId) {
+        projectSnapshotSyncReadyRef.current = true;
+        return;
+      }
+      const localLooksEmpty = !generatedCodeFiles.length
+        && !generatedRoutes.length
+        && !generatedComponents.length
+        && !generatedFileTree.length
+        && !builderChatHistory.length
+        && !orchestrationHistory.length;
+      if (!localLooksEmpty) {
+        projectSnapshotSyncReadyRef.current = true;
+        return;
+      }
+
+      try {
+        projectSnapshotHydratingRef.current = true;
+        const data = await requestProjectState(projectId);
+        if (!active || !data?.ok || !data?.snapshot) {
+          return;
+        }
+        hydrateProjectStateSnapshot(data.snapshot);
+        setStatusMessage("Loaded saved project from backend.");
+        setBuilderInsight("This project was restored from backend storage.");
+      } catch {
+        // Leave local state as-is if the backend snapshot is unavailable.
+      } finally {
+        projectSnapshotHydratingRef.current = false;
+        projectSnapshotSyncReadyRef.current = true;
+      }
+    }
+
+    loadProjectSnapshotIfNeeded();
+    return () => {
+      active = false;
+    };
+  }, [apiStatus, projectId, generatedCodeFiles.length, generatedRoutes.length, generatedComponents.length, generatedFileTree.length, builderChatHistory.length, orchestrationHistory.length]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSavedProjects() {
+      if (apiStatus !== "connected") {
+        setSavedProjectList([]);
+        return;
+      }
+      setIsProjectListLoading(true);
+      try {
+        const data = await requestProjectStateList();
+        if (!active) return;
+        setSavedProjectList(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        if (!active) return;
+        setSavedProjectList([]);
+      } finally {
+        if (active) setIsProjectListLoading(false);
+      }
+    }
+
+    loadSavedProjects();
+    return () => {
+      active = false;
+    };
+  }, [apiStatus, projectId]);
+
+  useEffect(() => {
+    if (apiStatus !== "connected" || !projectId || !projectSnapshotSyncReadyRef.current || projectSnapshotHydratingRef.current) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      const snapshot = buildProjectStateSnapshot();
+      requestSaveProjectState(projectId, snapshot)
+        .then(() => requestProjectStateList().then((data) => setSavedProjectList(Array.isArray(data?.items) ? data.items : [])).catch(() => undefined))
+        .catch(() => undefined);
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    apiStatus,
+    projectId,
+    prompt,
+    activeModules,
+    layoutState,
+    featureState,
+    mutationLog,
+    commandHistory,
+    savedResults,
+    uiMode,
+    simpleFlowStep,
+    simpleDraft,
+    mutationVersions,
+    systemPlanner,
+    generatedAppMonetization,
+    generatedFileTree,
+    generatedRoutes,
+    generatedComponents,
+    generatedCodeFiles,
+    selectedGeneratedFilePath,
+    orchestrationHistory,
+    builderChatHistory,
+    builderChatDraft,
+    builderProjectMemory,
+    builderAssistantPrefs,
+    fullStackScope,
+    chatReplyPreference,
+    selectedPreviewRoute,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -2799,6 +2938,110 @@ export default function App() {
 
     if (!response.ok) throw new Error("Workspace edit request failed");
     return response.json();
+  }
+
+  async function requestProjectState(targetProjectId) {
+    const response = await fetch(`${API_BASE}/project-state/${encodeURIComponent(targetProjectId)}`);
+    if (!response.ok) throw new Error("Project state request failed");
+    return response.json();
+  }
+
+  async function requestProjectStateList(limit = 12) {
+    const response = await fetch(`${API_BASE}/project-states?limit=${limit}`);
+    if (!response.ok) throw new Error("Project list request failed");
+    return response.json();
+  }
+
+  async function requestSaveProjectState(targetProjectId, snapshot) {
+    const response = await fetch(`${API_BASE}/project-state/${encodeURIComponent(targetProjectId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot }),
+    });
+    if (!response.ok) throw new Error("Project state save failed");
+    return response.json();
+  }
+
+  function buildProjectStateSnapshot() {
+    return {
+      project_id: projectId,
+      current_prompt: prompt,
+      active_modules: activeModules,
+      current_layout: layoutState,
+      feature_state: featureState,
+      mutation_log: mutationLog,
+      command_history: commandHistory,
+      saved_results: savedResults,
+      ui_mode: uiMode,
+      simple_flow_step: simpleFlowStep,
+      simple_draft: simpleDraft,
+      mutation_versions: mutationVersions,
+      system_planner: systemPlanner,
+      generated_app_monetization: generatedAppMonetization,
+      generated_file_tree: generatedFileTree,
+      routes: generatedRoutes,
+      components: generatedComponents,
+      generated_files: generatedCodeFiles,
+      selected_generated_file_path: selectedGeneratedFilePath,
+      orchestration_history: orchestrationHistory,
+      builder_chat_history: builderChatHistory,
+      builder_chat_draft: builderChatDraft,
+      builder_project_memory: builderProjectMemory,
+      builder_assistant_prefs: builderAssistantPrefs,
+      full_stack_scope: fullStackScope,
+      chat_reply_preference: chatReplyPreference,
+      selected_preview_route: selectedPreviewRoute,
+    };
+  }
+
+  function hydrateProjectStateSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    if (snapshot.project_id) setProjectId(snapshot.project_id);
+    if (typeof snapshot.current_prompt === "string") setPrompt(snapshot.current_prompt);
+    if (Array.isArray(snapshot.active_modules)) setActiveModules(snapshot.active_modules);
+    if (snapshot.current_layout && typeof snapshot.current_layout === "object") setLayoutState(snapshot.current_layout);
+    if (snapshot.feature_state && typeof snapshot.feature_state === "object") setFeatureState((prev) => ({ ...prev, ...snapshot.feature_state }));
+    if (Array.isArray(snapshot.mutation_log)) setMutationLog(snapshot.mutation_log);
+    if (Array.isArray(snapshot.command_history)) setCommandHistory(snapshot.command_history);
+    if (Array.isArray(snapshot.saved_results)) setSavedResults(snapshot.saved_results);
+    if (typeof snapshot.ui_mode === "string") setUiMode(snapshot.ui_mode);
+    if (typeof snapshot.simple_flow_step === "string") setSimpleFlowStep(snapshot.simple_flow_step);
+    if (snapshot.simple_draft && typeof snapshot.simple_draft === "object") setSimpleDraft((prev) => ({ ...prev, ...snapshot.simple_draft }));
+    if (Array.isArray(snapshot.mutation_versions)) setMutationVersions(snapshot.mutation_versions);
+    if (snapshot.system_planner && typeof snapshot.system_planner === "object") setSystemPlanner(snapshot.system_planner);
+    if (snapshot.generated_app_monetization !== undefined) setGeneratedAppMonetization(snapshot.generated_app_monetization || null);
+    if (Array.isArray(snapshot.generated_file_tree)) setGeneratedFileTree(snapshot.generated_file_tree);
+    if (Array.isArray(snapshot.routes)) setGeneratedRoutes(snapshot.routes);
+    if (Array.isArray(snapshot.components)) setGeneratedComponents(snapshot.components);
+    if (Array.isArray(snapshot.generated_files)) setGeneratedCodeFiles(snapshot.generated_files);
+    if (typeof snapshot.selected_generated_file_path === "string") setSelectedGeneratedFilePath(snapshot.selected_generated_file_path);
+    if (Array.isArray(snapshot.orchestration_history)) setOrchestrationHistory(snapshot.orchestration_history);
+    if (Array.isArray(snapshot.builder_chat_history)) setBuilderChatHistory(snapshot.builder_chat_history);
+    if (typeof snapshot.builder_chat_draft === "string") setBuilderChatDraft(snapshot.builder_chat_draft);
+    if (snapshot.builder_project_memory && typeof snapshot.builder_project_memory === "object") setBuilderProjectMemory(snapshot.builder_project_memory);
+    if (snapshot.builder_assistant_prefs && typeof snapshot.builder_assistant_prefs === "object") setBuilderAssistantPrefs(snapshot.builder_assistant_prefs);
+    if (typeof snapshot.full_stack_scope === "string") setFullStackScope(snapshot.full_stack_scope);
+    if (typeof snapshot.chat_reply_preference === "string") setChatReplyPreference(snapshot.chat_reply_preference);
+    if (typeof snapshot.selected_preview_route === "string") setSelectedPreviewRoute(snapshot.selected_preview_route);
+  }
+
+  async function restoreProjectById(targetProjectId) {
+    const cleaned = String(targetProjectId || "").trim();
+    if (!cleaned) return;
+    const data = await requestProjectState(cleaned);
+    if (!data?.ok || !data?.snapshot) {
+      throw new Error("Saved project not found");
+    }
+    projectSnapshotHydratingRef.current = true;
+    hydrateProjectStateSnapshot(data.snapshot);
+    setProjectId(cleaned);
+    setRestoreProjectIdInput(cleaned);
+    setStatusMessage("Saved project restored from backend.");
+    setBuilderInsight("The builder restored this saved project snapshot.");
+    window.setTimeout(() => {
+      projectSnapshotHydratingRef.current = false;
+      projectSnapshotSyncReadyRef.current = true;
+    }, 0);
   }
 
   async function submitBuilderChatMessage(rawMessage, modeOverride) {
@@ -6289,6 +6532,53 @@ export default function App() {
                       ))}
                     </div>
                   ) : null}
+                </Panel>
+
+                <Panel title="Saved projects" subtitle="Restore a project snapshot saved on the backend.">
+                  <div className="module-list">
+                    <div className="module-item">
+                      <strong>Restore by project id</strong>
+                      <input
+                        className="input"
+                        type="text"
+                        value={restoreProjectIdInput}
+                        onChange={(event) => setRestoreProjectIdInput(event.target.value)}
+                        placeholder="proj-2026..."
+                        style={{ marginTop: 10 }}
+                      />
+                      <div className="chat-chip-row" style={{ marginTop: 10 }}>
+                        <button
+                          className="pill primary"
+                          type="button"
+                          onClick={() => restoreProjectById(restoreProjectIdInput).catch((error) => setStatusMessage(error.message || "Could not restore project."))}
+                        >
+                          Restore project
+                        </button>
+                      </div>
+                    </div>
+                    {isProjectListLoading ? (
+                      <div className="chat-empty-state">Loading saved projects…</div>
+                    ) : savedProjectList.length ? savedProjectList.slice(0, 8).map((item) => (
+                      <div key={item.project_id} className="module-item">
+                        <strong>{item.project_summary || item.project_id}</strong>
+                        <div className="muted" style={{ marginTop: 6 }}>{item.project_id}</div>
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          {[item.app_type || "Unknown app", item.builder_mode || "Unknown mode", item.saved_at ? `Saved ${new Date(item.saved_at).toLocaleString()}` : null].filter(Boolean).join(" · ")}
+                        </div>
+                        <div className="chat-chip-row" style={{ marginTop: 10 }}>
+                          <button
+                            className="chat-chip"
+                            type="button"
+                            onClick={() => restoreProjectById(item.project_id).catch((error) => setStatusMessage(error.message || "Could not restore project."))}
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="chat-empty-state">No saved backend projects yet.</div>
+                    )}
+                  </div>
                 </Panel>
               </div>
             </Panel> : null}
