@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 
-const API_BASE = "https://builder-backend-092s.onrender.com";
+const API_BASE = (import.meta.env.VITE_API_BASE || "https://builder-backend-092s.onrender.com").trim().replace(/\/$/, "");
 const STORAGE_KEYS = {
   results: "builder_saved_results_v4",
   commandHistory: "builder_command_history_v4",
@@ -638,7 +638,65 @@ function buildSimpleStarterPrompt(draft) {
 
 function getActionIdentity(action) {
   if (!action) return "";
-  return [action.key || "", action.cmd || "", action.label || ""].join("::");
+  return [action.key || "", action.cmd || "", action.prompt || "", action.label || ""].join("::");
+}
+
+function getAppliedBuilderActionIds(projectMemory) {
+  return Array.isArray(projectMemory?.applied_builder_action_ids)
+    ? projectMemory.applied_builder_action_ids.filter(Boolean)
+    : [];
+}
+
+function getAvoidedBuilderActionIds(projectMemory) {
+  return Array.isArray(projectMemory?.avoided_builder_action_ids)
+    ? projectMemory.avoided_builder_action_ids.filter(Boolean)
+    : [];
+}
+
+function rememberAppliedBuilderAction(previousMemory, action) {
+  const actionId = getActionIdentity(action);
+  if (!actionId) return previousMemory || {};
+  const previousIds = getAppliedBuilderActionIds(previousMemory);
+  return {
+    ...(previousMemory || {}),
+    applied_builder_action_ids: [...new Set([actionId, ...previousIds])].slice(0, 16),
+    last_applied_builder_action_id: actionId,
+    last_applied_builder_action_label: action?.label || action?.prompt || action?.cmd || "",
+  };
+}
+
+function rememberAvoidedBuilderAction(previousMemory, action) {
+  const actionId = getActionIdentity(action);
+  if (!actionId) return previousMemory || {};
+  const previousIds = getAvoidedBuilderActionIds(previousMemory);
+  return {
+    ...(previousMemory || {}),
+    avoided_builder_action_ids: [...new Set([actionId, ...previousIds])].slice(0, 16),
+    last_avoided_builder_action_id: actionId,
+    last_avoided_builder_action_label: action?.label || action?.prompt || action?.cmd || "",
+  };
+}
+
+function getBuilderHistoryNotes(projectMemory) {
+  const notes = [];
+  const lastAppliedLabel = String(projectMemory?.last_applied_builder_action_label || "").trim();
+  const lastAvoidedLabel = String(projectMemory?.last_avoided_builder_action_label || "").trim();
+
+  if (lastAppliedLabel) {
+    notes.push({
+      label: "Already applied",
+      reason: `${lastAppliedLabel} is not being suggested again because it was already used in this builder.`,
+    });
+  }
+
+  if (lastAvoidedLabel) {
+    notes.push({
+      label: "Dismissed earlier",
+      reason: `${lastAvoidedLabel} is being skipped because you already dismissed it.`,
+    });
+  }
+
+  return notes;
 }
 
 function getNextBestActions({ featureState, layoutState, commandHistory, result }) {
@@ -788,7 +846,7 @@ function simplifyInsightMessage(message, hasProject) {
 function isBuilderWorkspaceRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
-  return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui)/.test(text);
+  return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui|make this builder chat feel live|in-thread thinking|clearer progress|faster reply feedback)/.test(text);
 }
 
 function isBuilderConversationRequest(message) {
@@ -803,6 +861,132 @@ function isBuilderSuggestionRequest(message) {
   const asksForSuggestions = /(what suggestion|what suggestions|suggestion|suggestions|ideas|recommendation|recommendations|smarter|better|beyyer|keep improving|improve)/.test(text);
   const targetsBuilderAi = /(builder|ai|ia|chat|assistant|this ai|this ia|builder ai|builder ia|builder ui|builder workspace)/.test(text);
   return asksForSuggestions && targetsBuilderAi;
+}
+
+function getBuilderSuggestionIntent(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (/(live|real[- ]time|typing|instant|faster|responsive)/.test(text)) return "live";
+  if (/(logic|smarter|smart|brain|reason|thinking|context|focus|repetition|repetitive)/.test(text)) return "logic";
+  if (/(preview|canvas|bigger|larger|side)/.test(text)) return "preview";
+  if (/(chat|conversation|composer|reply|actions|cards)/.test(text)) return "chat";
+  if (/(layout|ui|header|panel|clean|simplify)/.test(text)) return "layout";
+  return "general";
+}
+
+function getRecentBuilderAttemptTags(history = []) {
+  const recentUserTexts = history
+    .filter((item) => item?.role === "user")
+    .slice(0, 8)
+    .map((item) => String(item.text || "").toLowerCase());
+  const tags = new Set();
+  recentUserTexts.forEach((text) => {
+    if (/(preview|larger|canvas|side)/.test(text)) tags.add("preview");
+    if (/(chat|conversation|composer|cards|reply)/.test(text)) tags.add("chat");
+    if (/(live|real[- ]time|typing|faster)/.test(text)) tags.add("live");
+    if (/(logic|smarter|context|focus|repetition|repetitive)/.test(text)) tags.add("logic");
+    if (/(layout|ui|header|clean|simplify)/.test(text)) tags.add("layout");
+  });
+  return tags;
+}
+
+function prioritizeBuilderSuggestionActions(actions, message, history = []) {
+  const intent = getBuilderSuggestionIntent(message);
+  const recentTags = getRecentBuilderAttemptTags(history);
+  return [...actions].sort((left, right) => {
+    const score = (action) => {
+      const text = `${action.label || ""} ${action.prompt || ""}`.toLowerCase();
+      let value = 0;
+      if (intent === "live" && /(live|thinking|reply|chat)/.test(text)) value += 6;
+      if (intent === "logic" && /(logic|context|smart|repetition|chat flow)/.test(text)) value += 6;
+      if (intent === "preview" && /(preview|larger|side)/.test(text)) value += 6;
+      if (intent === "chat" && /(chat|composer|actions|cards)/.test(text)) value += 6;
+      if (intent === "layout" && /(layout|header|simplify|preview)/.test(text)) value += 4;
+      if (recentTags.has("preview") && /(preview|larger|side)/.test(text)) value -= 3;
+      if (recentTags.has("chat") && /(chat|composer|actions|cards)/.test(text)) value -= 3;
+      if (recentTags.has("logic") && /(logic|context|smart|repetition)/.test(text)) value -= 3;
+      if (recentTags.has("live") && /(live|thinking|reply)/.test(text)) value -= 3;
+      return value;
+    };
+    return score(right) - score(left);
+  });
+}
+
+function buildBuilderSuggestionReply(message, actions, history = []) {
+  const intent = getBuilderSuggestionIntent(message);
+  const recentTags = [...getRecentBuilderAttemptTags(history)];
+  const alreadyTried = recentTags.length
+    ? ` Already touched: ${recentTags.join(", ")}.`
+    : "";
+
+  if (intent === "live") {
+    return {
+      text: `The next upgrade should make this chat feel live: show a visible in-thread thinking state, shorten the time between your action and the builder feedback, and keep the next step attached to the exact reply instead of repeating it elsewhere.${alreadyTried}`,
+      meta: "Live builder chat upgrade plan ready.",
+      cautions: [
+        { label: "Fake live feeling", reason: "If the builder only flips the button to Working, the chat still feels static even when the request is running." },
+      ],
+    };
+  }
+
+  if (intent === "logic") {
+    return {
+      text: `The biggest logic upgrade now is builder context discipline: keep builder requests separate from app-project mutations, vary the reply based on what you already tried, and stop recycling the same suggestion set every turn.${alreadyTried}`,
+      meta: "Builder logic upgrade plan ready.",
+      cautions: [
+        { label: "Context bleed", reason: "If builder prompts inherit app context, the AI stops improving itself and starts mutating the current project instead." },
+      ],
+    };
+  }
+
+  if (intent === "preview") {
+    return {
+      text: `Preview visibility is still the highest-value improvement. The builder is easier to judge when preview gets more width, chat stays readable, and the layout spends less space on secondary chrome.${alreadyTried}`,
+      meta: "Preview-first improvement plan ready.",
+      cautions: [],
+    };
+  }
+
+  if (intent === "chat") {
+    return {
+      text: `The chat flow still needs cleanup: fewer repeated cards, clearer next actions, and replies that adapt to whether you asked for a suggestion, a direct UI change, or a project mutation.${alreadyTried}`,
+      meta: "Chat-flow improvement plan ready.",
+      cautions: [],
+    };
+  }
+
+  return {
+    text: `Best next builder-AI improvements: keep the builder on builder context, make the chat feel live while it is working, reduce repeated suggestion cards, and rotate toward the next highest-value improvement instead of repeating the same recommendation.${alreadyTried}`,
+    meta: "Builder improvement plan ready.",
+    cautions: [
+      { label: "Repeated canned replies", reason: "If suggestion prompts always return the same fixed copy, the builder sounds static even when the context changed." },
+    ],
+  };
+}
+
+function buildLiveBuilderPendingState(message) {
+  const intent = getBuilderSuggestionIntent(message);
+  if (intent === "live") {
+    return {
+      text: "Checking the chat flow now and preparing a more live builder response...",
+      meta: "Looking at responsiveness, reply timing, and in-thread feedback.",
+    };
+  }
+  if (intent === "logic") {
+    return {
+      text: "Inspecting builder context and reply logic before I answer...",
+      meta: "Checking for repetition, focus drift, and the next best improvement.",
+    };
+  }
+  if (intent === "preview") {
+    return {
+      text: "Reviewing the preview layout and builder balance...",
+      meta: "Checking preview width, chat space, and layout clarity.",
+    };
+  }
+  return {
+    text: "Thinking through the next builder improvement...",
+    meta: "Using the current builder context and recent chat history.",
+  };
 }
 
 function isBuilderOnlyAssistantMessage(message) {
@@ -2010,6 +2194,7 @@ export default function App() {
   const [globalKnowledgeTopics, setGlobalKnowledgeTopics] = useState([]);
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
+  const [pendingAssistantReply, setPendingAssistantReply] = useState(null);
   const [hasUnreadAssistantReply, setHasUnreadAssistantReply] = useState(false);
   const [isChatThreadNearTop, setIsChatThreadNearTop] = useState(true);
   const [chatAssistantMode, setChatAssistantMode] = useState("app");
@@ -2343,13 +2528,33 @@ export default function App() {
     () => builderChatHistory.filter((message, index, history) => !shouldHideAssistantMessageInBuilderFocus(message, index, history, currentConversationTopic, builderProjectMemory.last_user_request)),
     [builderChatHistory, currentConversationTopic, builderProjectMemory.last_user_request],
   );
+  const appliedBuilderActionIds = useMemo(
+    () => new Set(getAppliedBuilderActionIds(builderProjectMemory)),
+    [builderProjectMemory],
+  );
+  const avoidedBuilderActionIds = useMemo(
+    () => new Set(getAvoidedBuilderActionIds(builderProjectMemory)),
+    [builderProjectMemory],
+  );
+  const blockedBuilderActionIds = useMemo(() => {
+    const blocked = new Set(appliedBuilderActionIds);
+    avoidedBuilderActionIds.forEach((item) => blocked.add(item));
+    return blocked;
+  }, [appliedBuilderActionIds, avoidedBuilderActionIds]);
+  const renderedBuilderChatHistory = useMemo(
+    () => [...visibleBuilderChatHistory].reverse(),
+    [visibleBuilderChatHistory],
+  );
   const latestAssistantLeadAction = useMemo(() => {
     const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
     const latestAssistantMessage = visibleBuilderChatHistory.find((item) => item.role === "assistant") || null;
     if (!latestAssistantMessage || !Array.isArray(latestAssistantMessage.actions) || !latestAssistantMessage.actions.length) {
       return { lead: null, extras: [] };
     }
-    const visibleActions = latestAssistantMessage.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
+    const visibleActions = latestAssistantMessage.actions.filter((action) => {
+      const actionId = getActionIdentity(action);
+      return actionId !== dismissedAssistantActionId && !blockedBuilderActionIds.has(actionId);
+    });
     if (!visibleActions.length) {
       return { lead: null, extras: [] };
     }
@@ -2357,13 +2562,14 @@ export default function App() {
       lead: visibleActions[0],
       extras: visibleActions.slice(1, 3),
     };
-  }, [visibleBuilderChatHistory, builderProjectMemory.dismissed_assistant_action_id]);
+  }, [visibleBuilderChatHistory, builderProjectMemory.dismissed_assistant_action_id, blockedBuilderActionIds]);
   const statusCardPrimaryAction = uiMode === "chat" ? null : primaryNextAction;
   const statusCardSecondaryActions = uiMode === "chat" ? [] : secondaryNextActions;
   const latestAssistantChatMessage = useMemo(
     () => visibleBuilderChatHistory.find((item) => item.role === "assistant") || null,
     [visibleBuilderChatHistory],
   );
+  const showStatusCard = uiMode !== "chat" || !latestAssistantChatMessage;
   const currentChatFocusLabel = useMemo(() => {
     if (currentConversationTopic === "builder_ai") {
       return "builder ai";
@@ -2484,6 +2690,18 @@ export default function App() {
         reason: "Makes suggestions easier to follow and avoids repetitive responses.",
       },
       {
+        label: "Make chat feel live",
+        prompt: "make this builder chat feel live with in-thread thinking feedback and clearer progress",
+        mode: "evolve",
+        reason: "Makes the builder feel responsive while it is working instead of only switching the button state.",
+      },
+      {
+        label: "Improve builder logic",
+        prompt: "improve this builder ai logic with better context memory and less repetitive suggestions",
+        mode: "evolve",
+        reason: "Keeps the builder smarter across turns and reduces repeated canned replies.",
+      },
+      {
         label: "Shrink header",
         prompt: "shrink the header and give more space to chat and preview",
         mode: "evolve",
@@ -2500,11 +2718,12 @@ export default function App() {
     const seen = new Set();
     return merged.filter((item) => {
       const key = String(item.label || item.prompt || "").toLowerCase();
-      if (!key || seen.has(key)) return false;
+      const actionId = getActionIdentity(item);
+      if (!key || seen.has(key) || blockedBuilderActionIds.has(actionId)) return false;
       seen.add(key);
       return true;
     }).slice(0, 6);
-  }, [builderAssistantQuickActions]);
+  }, [builderAssistantQuickActions, blockedBuilderActionIds]);
 
   function buildScopedChatMessage(message) {
     const text = String(message || "").trim();
@@ -2941,7 +3160,7 @@ export default function App() {
     if (!primaryNextAction) return;
     const actionId = getActionIdentity(primaryNextAction);
     setBuilderProjectMemory((prev) => ({
-      ...prev,
+      ...rememberAvoidedBuilderAction(prev, primaryNextAction),
       dismissed_next_action_id: actionId,
       dismissed_next_action_label: primaryNextAction.label || "",
     }));
@@ -2965,7 +3184,7 @@ export default function App() {
     if (!action) return;
     const actionId = getActionIdentity(action);
     setBuilderProjectMemory((prev) => ({
-      ...prev,
+      ...rememberAvoidedBuilderAction(prev, action),
       dismissed_assistant_action_id: actionId,
       dismissed_assistant_action_label: action.label || "",
     }));
@@ -2976,7 +3195,7 @@ export default function App() {
     if (!action) return;
     const actionId = getActionIdentity(action);
     setBuilderProjectMemory((prev) => ({
-      ...prev,
+      ...rememberAppliedBuilderAction(prev, action),
       dismissed_assistant_action_id: "",
       accepted_assistant_action_id: actionId,
       accepted_assistant_action_label: action.label || "",
@@ -3210,6 +3429,7 @@ export default function App() {
     if (!message || isChatSubmitting) return;
     const scopedMessage = buildScopedChatMessage(message);
     const isBuilderConversation = isBuilderConversationRequest(message);
+    const isBuilderWorkspaceChange = isBuilderWorkspaceRequest(message);
     const prefersAutoApply = builderImprovementMode === "auto" || shouldAutoApplyImprovements(message, chatReplyPreference);
     const applyConfirmation = isApplyConfirmationMessage(message);
 
@@ -3230,33 +3450,70 @@ export default function App() {
 
     try {
       setIsChatSubmitting(true);
+      setPendingAssistantReply(buildLiveBuilderPendingState(message));
+
+      if (isBuilderWorkspaceChange) {
+        const workspaceSummary = applyBuilderWorkspaceCommand(message);
+        setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
+        appendBuilderChatMessage({
+          role: "assistant",
+          text: workspaceSummary?.notes?.length
+            ? `I updated this builder for you. ${workspaceSummary.notes.join(" ")}`
+            : "I updated this builder workspace for you.",
+          meta: [
+            workspaceSummary?.layout ? `Layout: ${getLayoutLabel(workspaceSummary.layout)}` : null,
+            workspaceSummary?.add?.length ? `Added: ${workspaceSummary.add.join(", ")}` : null,
+            workspaceSummary?.remove?.length ? `Removed: ${workspaceSummary.remove.join(", ")}` : null,
+          ].filter(Boolean).join(" • "),
+        });
+        setBuilderProjectMemory((prev) => ({
+          ...rememberAppliedBuilderAction(prev, { prompt: message, label: message }),
+          builder_summary: "This chat can help improve the builder UI as well as generated apps.",
+          current_conversation_topic: "builder_ai",
+          last_builder_workspace_request: message,
+          research_recommendation: null,
+          dismissed_assistant_action_id: "",
+          accepted_assistant_action_id: "",
+          accepted_assistant_action_label: "",
+        }));
+        setStatusMessage("Builder UI updated.");
+        setBuilderInsight(workspaceSummary?.notes?.length
+          ? workspaceSummary.notes.join(" ")
+          : "The builder layout was updated for your request.");
+        return;
+      }
 
       if (isBuilderSuggestionRequest(message)) {
-        const suggestionActions = smartBuilderUpgradeActions.length
+        const suggestionActions = prioritizeBuilderSuggestionActions(smartBuilderUpgradeActions.length
           ? smartBuilderUpgradeActions
           : [{
             label: "Improve this builder UI",
             prompt: "improve this builder ui",
             mode: "evolve",
             reason: "Applies a direct builder workspace improvement right away.",
-          }];
+          }], message, builderChatHistory);
+        const suggestionReply = buildBuilderSuggestionReply(message, suggestionActions, builderChatHistory);
+        const historyNotes = getBuilderHistoryNotes(builderProjectMemory);
 
         appendBuilderChatMessage({
           role: "assistant",
-          text: "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
-          meta: "Builder-only suggestion plan ready.",
+          text: suggestionReply.text,
+          meta: suggestionReply.meta,
           actions: suggestionActions.slice(0, 4),
           advice: {
             better_options: suggestionActions.slice(0, 3).map((item) => ({
               label: item.label,
               reason: item.reason || "High-impact improvement for this builder workflow.",
             })),
-            cautions: [
-              {
-                label: "Project context can take over",
-                reason: "Builder suggestion requests should not inherit the active RV or app project context.",
-              },
-            ],
+            cautions: suggestionReply.cautions?.length
+              ? suggestionReply.cautions
+              : [
+                {
+                  label: "Project context can take over",
+                  reason: "Builder suggestion requests should not inherit the active RV or app project context.",
+                },
+              ],
+            history_notes: historyNotes,
           },
         });
 
@@ -3266,28 +3523,47 @@ export default function App() {
           current_conversation_topic: "builder_ai",
           last_builder_workspace_request: "",
           last_user_request: message,
+          research_recommendation: null,
+          workspace_last_scope: "",
         }));
 
         if (prefersAutoApply) {
           const autoAction = suggestionActions[0];
           const applyMode = autoAction.mode || resolvedMode;
           const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
-          const summary = applyMode === "mutate"
-            ? await handleGeneratedAppMutation(applyPrompt)
-            : await runBuilderBrain(applyPrompt);
+          if (isBuilderWorkspaceRequest(applyPrompt)) {
+            const workspaceSummary = applyBuilderWorkspaceCommand(applyPrompt);
+            setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, applyPrompt));
+            setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, autoAction));
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied this builder-focused improvement now: ${autoAction.label}.`,
+              meta: workspaceSummary?.notes?.length
+                ? workspaceSummary.notes.join(" • ")
+                : "Builder workspace improvement applied.",
+            });
+            setStatusMessage("Builder UI updated.");
+            setBuilderInsight(workspaceSummary?.notes?.length
+              ? workspaceSummary.notes.join(" ")
+              : "The builder layout was updated for your request.");
+          } else {
+            const summary = applyMode === "mutate"
+              ? await handleGeneratedAppMutation(applyPrompt)
+              : await runBuilderBrain(applyPrompt);
 
-          appendBuilderChatMessage({
-            role: "assistant",
-            text: `I applied this builder-focused improvement now: ${autoAction.label}.`,
-            meta: summary?.mutationSummary?.length
-              ? summary.mutationSummary.slice(0, 3).join(" • ")
-              : (summary?.builderInsight || "Builder improvement applied."),
-          });
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied this builder-focused improvement now: ${autoAction.label}.`,
+              meta: summary?.mutationSummary?.length
+                ? summary.mutationSummary.slice(0, 3).join(" • ")
+                : (summary?.builderInsight || "Builder improvement applied."),
+            });
+          }
         }
         return;
       }
 
-      if (isBuilderConversation && !isBuilderWorkspaceRequest(message) && !isBuilderSuggestionRequest(message)) {
+      if (isBuilderConversation && !isBuilderWorkspaceChange && !isBuilderSuggestionRequest(message)) {
         const builderActions = smartBuilderUpgradeActions.length
           ? smartBuilderUpgradeActions
           : [{
@@ -3324,12 +3600,15 @@ export default function App() {
           current_conversation_topic: "builder_ai",
           last_builder_workspace_request: "",
           last_user_request: message,
+          research_recommendation: null,
+          workspace_last_scope: "",
         }));
 
         if (prefersAutoApply) {
           const autoAction = builderActions[0];
           const applyMode = autoAction.mode || resolvedMode;
           const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
+          setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, autoAction));
           const summary = applyMode === "mutate"
             ? await handleGeneratedAppMutation(applyPrompt)
             : await runBuilderBrain(applyPrompt);
@@ -3349,6 +3628,7 @@ export default function App() {
         const action = latestAssistantLeadAction.lead;
         const applyMode = action.mode || resolvedMode;
         const applyPrompt = String(action.prompt || scopedMessage).trim();
+        setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, action));
         const summary = applyMode === "mutate"
           ? await handleGeneratedAppMutation(applyPrompt)
           : await runBuilderBrain(applyPrompt);
@@ -3360,36 +3640,6 @@ export default function App() {
             ? summary.mutationSummary.slice(0, 3).join(" • ")
             : (summary?.builderInsight || "Improvement applied."),
         });
-        return;
-      }
-
-      if (isBuilderWorkspaceRequest(message)) {
-        const workspaceSummary = applyBuilderWorkspaceCommand(message);
-        setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
-        appendBuilderChatMessage({
-          role: "assistant",
-          text: workspaceSummary?.notes?.length
-            ? `I updated this builder for you. ${workspaceSummary.notes.join(" ")}`
-            : "I updated this builder workspace for you.",
-          meta: [
-            workspaceSummary?.layout ? `Layout: ${getLayoutLabel(workspaceSummary.layout)}` : null,
-            workspaceSummary?.add?.length ? `Added: ${workspaceSummary.add.join(", ")}` : null,
-            workspaceSummary?.remove?.length ? `Removed: ${workspaceSummary.remove.join(", ")}` : null,
-          ].filter(Boolean).join(" • "),
-        });
-        setBuilderProjectMemory((prev) => ({
-          ...prev,
-          builder_summary: "This chat can help improve the builder UI as well as generated apps.",
-          current_conversation_topic: "builder_ai",
-          last_builder_workspace_request: message,
-          dismissed_assistant_action_id: "",
-          accepted_assistant_action_id: "",
-          accepted_assistant_action_label: "",
-        }));
-        setStatusMessage("Builder UI updated.");
-        setBuilderInsight(workspaceSummary?.notes?.length
-          ? workspaceSummary.notes.join(" ")
-          : "The builder layout was updated for your request.");
         return;
       }
 
@@ -3538,6 +3788,7 @@ export default function App() {
         meta: "You can retry the same prompt or switch to Pro mode to inspect details.",
       });
     } finally {
+      setPendingAssistantReply(null);
       setIsChatSubmitting(false);
     }
   }
@@ -4964,6 +5215,7 @@ export default function App() {
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
         .chat-message.user { background: rgba(102,217,239,.08); }
         .chat-message.assistant { background: rgba(139,92,246,.08); }
+        .chat-message.pending { opacity: .84; border-style: dashed; }
         .chat-meta-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
         .chat-role { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
         .chat-role .dot { width: 10px; height: 10px; border-radius: 999px; }
@@ -6623,21 +6875,6 @@ export default function App() {
                         Clear chat
                       </button>
                     </div>
-                    {latestAssistantChatMessage ? (
-                      <div className="chat-live-reply">
-                        <div className="chat-live-reply-head">
-                          <strong>Latest AI reply</strong>
-                          <button
-                            className="chat-secondary-link"
-                            type="button"
-                            onClick={() => chatConversationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                          >
-                            View full conversation
-                          </button>
-                        </div>
-                        <div className="chat-live-reply-body">{latestAssistantChatMessage.text}</div>
-                      </div>
-                    ) : null}
                   </div>
                   {showStarterExamples ? (
                     <div className="module-list" style={{ marginTop: 12 }}>
@@ -6681,183 +6918,208 @@ export default function App() {
                   </div>
                 ) : null}
                 <div className="chat-thread" ref={chatThreadRef} onScroll={handleChatThreadScroll}>
-                  {visibleBuilderChatHistory.length ? visibleBuilderChatHistory.map((message) => {
+                  {renderedBuilderChatHistory.length ? renderedBuilderChatHistory.map((message) => {
                     return (
-                    <div key={message.id} className={`chat-message ${message.role}`}>
-                      <div className="chat-meta-row">
-                        <div className="chat-role">
-                          <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
-                          {message.role === "user" ? "You" : "Builder"}
-                        </div>
-                        <span className="muted">{message.time}</span>
-                      </div>
-                      <div className="chat-body">{message.text}</div>
-                      {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
-                      {Array.isArray(message.questions) && message.questions.length ? (
-                        <div className="chat-question-list">
-                          {message.questions.map((question) => (
-                            <div key={question} className="chat-question-pill">{question}</div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.role === "assistant" && message.advice ? (
-                        <div className="chat-advice-stack">
-                          {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
-                            <div key={`upgrade_${item.label}`} className="chat-advice-card">
-                              <strong>Good idea: {item.label}</strong>
-                              <div className="muted">{item.reason}</div>
-                            </div>
-                          )) : null}
-                          {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
-                            <div key={`caution_${item.label}`} className="chat-advice-card">
-                              <strong>Possible problem: {item.label}</strong>
-                              <div className="muted">{item.reason}</div>
-                            </div>
-                          )) : null}
-                          {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
-                            <div key={`better_${item.label}`} className="chat-advice-card">
-                              <strong>Better idea: {item.label}</strong>
-                              <div className="muted">{item.reason}</div>
-                            </div>
-                          )) : null}
-                        </div>
-                      ) : null}
-                      {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
-                        <div className="chat-advice-stack">
-                          {message.researchFindings.slice(0, 4).map((item) => (
-                            <a
-                              key={`research_${item.url || item.title}`}
-                              className="chat-advice-card"
-                              href={item.url || "#"}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <strong>Helpful source: {item.title}</strong>
-                              <div className="muted">{item.snippet || "Source found for this topic."}</div>
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.role === "assistant" && message.researchRecommendation?.prompt ? (
-                        <div className="chat-advice-stack">
-                          <div className="chat-advice-card">
-                            <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
-                            <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
+                      <div key={message.id} className={`chat-message ${message.role}`}>
+                        <div className="chat-meta-row">
+                          <div className="chat-role">
+                            <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
+                            {message.role === "user" ? "You" : "Builder"}
                           </div>
+                          <span className="muted">{message.time}</span>
                         </div>
-                      ) : null}
-                      {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
-                        <div className="chat-advice-stack">
-                          {message.knowledgeHits.map((item) => (
-                            <a
-                              key={`knowledge_${item.url || item.title}`}
-                              className="chat-advice-card"
-                              href={item.url || "#"}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <strong>Saved note: {item.title}</strong>
-                              <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
-                        const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
-                        const visibleActions = message.actions.filter((action) => getActionIdentity(action) !== dismissedAssistantActionId);
-                        if (!visibleActions.length) return null;
-                        const leadAction = visibleActions[0];
-                        const extraActions = visibleActions.slice(1);
-                        return (
-                          <div className="chat-action-row">
-                            {leadAction?.reason ? (
-                              <div className="chat-advice-card" style={{ width: "100%" }}>
-                                <strong>{leadAction.label}</strong>
-                                <div className="muted">{leadAction.reason}</div>
-                                <div className="chat-action-row" style={{ marginTop: 10 }}>
-                                  <button
-                                    className="pill primary"
-                                    type="button"
-                                    onClick={() => applyAssistantSuggestedAction(leadAction)}
-                                  >
-                                    Do this next
-                                  </button>
-                                  <button
-                                    className="chat-secondary-link"
-                                    type="button"
-                                    onClick={() => dismissAssistantSuggestedAction(leadAction)}
-                                  >
-                                    Dismiss
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                            {extraActions.map((action) => (
-                              <button
-                                key={`${message.id}_${action.label}_${action.prompt}`}
-                                className="chat-chip"
-                                type="button"
-                                onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
-                              >
-                                {action.label}
-                              </button>
+                        <div className="chat-body">{message.text}</div>
+                        {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
+                        {Array.isArray(message.questions) && message.questions.length ? (
+                          <div className="chat-question-list">
+                            {message.questions.map((question) => (
+                              <div key={question} className="chat-question-pill">{question}</div>
                             ))}
                           </div>
-                        );
-                      })() : null}
-                    </div>
-                  );}) : (
+                        ) : null}
+                        {message.role === "assistant" && message.advice ? (
+                          <div className="chat-advice-stack">
+                            {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
+                              <div key={`upgrade_${item.label}`} className="chat-advice-card">
+                                <strong>Good idea: {item.label}</strong>
+                                <div className="muted">{item.reason}</div>
+                              </div>
+                            )) : null}
+                            {Array.isArray(message.advice.history_notes) ? message.advice.history_notes.map((item) => (
+                              <div key={`history_${item.label}_${item.reason}`} className="chat-advice-card">
+                                <strong>Why not this again: {item.label}</strong>
+                                <div className="muted">{item.reason}</div>
+                              </div>
+                            )) : null}
+                            {Array.isArray(message.advice.cautions) ? message.advice.cautions.map((item) => (
+                              <div key={`caution_${item.label}`} className="chat-advice-card">
+                                <strong>Possible problem: {item.label}</strong>
+                                <div className="muted">{item.reason}</div>
+                              </div>
+                            )) : null}
+                            {Array.isArray(message.advice.better_options) ? message.advice.better_options.map((item) => (
+                              <div key={`better_${item.label}`} className="chat-advice-card">
+                                <strong>Better idea: {item.label}</strong>
+                                <div className="muted">{item.reason}</div>
+                              </div>
+                            )) : null}
+                          </div>
+                        ) : null}
+                        {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
+                          <div className="chat-advice-stack">
+                            {message.researchFindings.slice(0, 4).map((item) => (
+                              <a
+                                key={`research_${item.url || item.title}`}
+                                className="chat-advice-card"
+                                href={item.url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <strong>Helpful source: {item.title}</strong>
+                                <div className="muted">{item.snippet || "Source found for this topic."}</div>
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                        {message.role === "assistant" && message.researchRecommendation?.prompt ? (
+                          <div className="chat-advice-stack">
+                            <div className="chat-advice-card">
+                              <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
+                              <div className="muted">{message.researchRecommendation.explanation || message.researchRecommendation.reason || "Chosen from saved research."}</div>
+                            </div>
+                          </div>
+                        ) : null}
+                        {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
+                          <div className="chat-advice-stack">
+                            {message.knowledgeHits.map((item) => (
+                              <a
+                                key={`knowledge_${item.url || item.title}`}
+                                className="chat-advice-card"
+                                href={item.url || "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <strong>Saved note: {item.title}</strong>
+                                <div className="muted">{item.summary || item.topic || "Saved from earlier research."}</div>
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                        {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
+                          const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
+                          const visibleActions = message.actions.filter((action) => {
+                            const actionId = getActionIdentity(action);
+                            return actionId !== dismissedAssistantActionId && !blockedBuilderActionIds.has(actionId);
+                          });
+                          if (!visibleActions.length) return null;
+                          const leadAction = visibleActions[0];
+                          const extraActions = visibleActions.slice(1);
+                          return (
+                            <div className="chat-action-row">
+                              {leadAction?.reason ? (
+                                <div className="chat-advice-card" style={{ width: "100%" }}>
+                                  <strong>{leadAction.label}</strong>
+                                  <div className="muted">{leadAction.reason}</div>
+                                  <div className="chat-action-row" style={{ marginTop: 10 }}>
+                                    <button
+                                      className="pill primary"
+                                      type="button"
+                                      onClick={() => applyAssistantSuggestedAction(leadAction)}
+                                    >
+                                      Do this next
+                                    </button>
+                                    <button
+                                      className="chat-secondary-link"
+                                      type="button"
+                                      onClick={() => dismissAssistantSuggestedAction(leadAction)}
+                                    >
+                                      Dismiss
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                              {extraActions.map((action) => (
+                                <button
+                                  key={`${message.id}_${action.label}_${action.prompt}`}
+                                  className="chat-chip"
+                                  type="button"
+                                  onClick={() => submitBuilderChatMessage(action.prompt, action.mode || "evolve")}
+                                >
+                                  {action.label}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })() : null}
+                      </div>
+                    );
+                  }) : (
                     <div className="chat-empty-state">
                       Start with one idea, then ask for simple follow-up changes like “add login”, “make it mobile”, or “prepare it for Render”.
                     </div>
                   )}
+                  {isChatSubmitting && pendingAssistantReply ? (
+                    <div className="chat-message assistant pending">
+                      <div className="chat-meta-row">
+                        <div className="chat-role">
+                          <span className="dot" style={{ background: "#8b5cf6" }} />
+                          Builder
+                        </div>
+                        <span className="muted">Live</span>
+                      </div>
+                      <div className="chat-body">{pendingAssistantReply.text}</div>
+                      {pendingAssistantReply.meta ? <div className="chat-assist-meta">{pendingAssistantReply.meta}</div> : null}
+                    </div>
+                  ) : null}
                 </div>
               </Panel>
             </div>
 
-            <div className="chat-status-card">
-              <div className="chat-status-head">
-                <div className="chat-status-copy">
-                  <strong>Builder update</strong>
-                  <div>{simpleStatusMessage}</div>
-                  <div className="muted">{simpleBuilderInsight}</div>
-                </div>
-                {statusCardPrimaryAction ? (
-                  <div className="chat-primary-next">
-                    <div>
-                      <strong>{statusCardPrimaryAction.label}</strong>
-                      <div className="muted" style={{ marginTop: 4 }}>{statusCardPrimaryAction.reason}</div>
-                    </div>
-                    <div className="chat-next-actions">
-                      <button
-                        className="pill primary"
-                        type="button"
-                        onClick={() => uiMode === "chat" ? applyAssistantSuggestedAction(statusCardPrimaryAction) : applyPrimaryNextAction(statusCardPrimaryAction)}
-                      >
-                        Do this next
-                      </button>
-                      <button
-                        className="chat-secondary-link"
-                        type="button"
-                        onClick={() => uiMode === "chat" ? dismissAssistantSuggestedAction(statusCardPrimaryAction) : dismissPrimaryNextAction()}
-                      >
-                        Dismiss
-                      </button>
-                      {statusCardSecondaryActions.map((action) => (
-                        <button
-                          key={action.key || action.label}
-                          className="chat-chip"
-                          type="button"
-                          onClick={() => uiMode === "chat" ? submitBuilderChatMessage(action.prompt, action.mode || "evolve") : submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}
-                        >
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
+            {showStatusCard ? (
+              <div className="chat-status-card">
+                <div className="chat-status-head">
+                  <div className="chat-status-copy">
+                    <strong>Builder update</strong>
+                    <div>{simpleStatusMessage}</div>
+                    <div className="muted">{simpleBuilderInsight}</div>
                   </div>
-                ) : null}
+                  {statusCardPrimaryAction ? (
+                    <div className="chat-primary-next">
+                      <div>
+                        <strong>{statusCardPrimaryAction.label}</strong>
+                        <div className="muted" style={{ marginTop: 4 }}>{statusCardPrimaryAction.reason}</div>
+                      </div>
+                      <div className="chat-next-actions">
+                        <button
+                          className="pill primary"
+                          type="button"
+                          onClick={() => uiMode === "chat" ? applyAssistantSuggestedAction(statusCardPrimaryAction) : applyPrimaryNextAction(statusCardPrimaryAction)}
+                        >
+                          Do this next
+                        </button>
+                        <button
+                          className="chat-secondary-link"
+                          type="button"
+                          onClick={() => uiMode === "chat" ? dismissAssistantSuggestedAction(statusCardPrimaryAction) : dismissPrimaryNextAction()}
+                        >
+                          Dismiss
+                        </button>
+                        {statusCardSecondaryActions.map((action) => (
+                          <button
+                            key={action.key || action.label}
+                            className="chat-chip"
+                            type="button"
+                            onClick={() => uiMode === "chat" ? submitBuilderChatMessage(action.prompt, action.mode || "evolve") : submitBuilderChatMessage(action.cmd, action.cmd === "run-planner" ? "mutate" : "evolve")}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {showChatDetails ? <Panel title="Project details" subtitle="Technical project info and saved builder memory.">
               <div className="chat-side-stack">
@@ -6962,7 +7224,7 @@ export default function App() {
                       )) : null}
                     </div>
                   ) : null}
-                  {builderProjectMemory.research_recommendation?.prompt ? (
+                  {builderProjectMemory.research_recommendation?.prompt && currentConversationTopic !== "builder_ai" ? (
                     <div className="module-list" style={{ marginTop: 12 }}>
                       <div className="module-item">
                         <strong>Recommended next move: {builderProjectMemory.research_recommendation.label || "Recommended next move"}</strong>

@@ -1,16 +1,36 @@
-# React + Vite
+# Frontend Setup
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## API target
 
-Currently, two official plugins are available:
+The frontend reads its backend URL from `VITE_API_BASE`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Create a local `.env` file in this folder and set:
 
-## React Compiler
+```bash
+VITE_API_BASE=http://127.0.0.1:8000
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+You can also point it at a deployed backend if needed.
 
-## Expanding the ESLint configuration
+## Start frontend
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+npm run dev
+```
+
+## Important note
+
+The current local backend in `../backend/main.py` does not yet implement the full AI builder chat API used by this frontend.
+
+Local backend gaps currently include endpoints such as:
+
+- `/chat-agent`
+- `/repo-edit`
+- `/workspace-edit`
+- `/project-state`
+- `/project-states`
+- `/knowledge-store`
+- `/orchestrate`
+
+So the frontend is now configurable for a local backend, but the local backend still needs those endpoints before it will behave the same as the deployed builder backend.

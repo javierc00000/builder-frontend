@@ -1,0 +1,1342 @@
+{
+  "items": {
+    "proj-20260411091013": {
+      "project_id": "proj-20260411091013",
+      "current_prompt": "improve this builder ui and make the preview larger on the side",
+      "active_modules": [
+        "calculator_engine",
+        "results_summary",
+        "affiliate_suggestions",
+        "export_report",
+        "save_results",
+        "active_features_panel",
+        "status_panel",
+        "live_preview",
+        "quick_actions",
+        "dashboard_shell",
+        "sidebar_navigation",
+        "split_workspace"
+      ],
+      "current_layout": {
+        "mode": "workspace",
+        "shell": "focus",
+        "sidebar": false,
+        "split": true,
+        "topbar": true,
+        "inspector": false,
+        "cards": true,
+        "dense": false,
+        "previewStyle": "spotlight",
+        "panels": {
+          "sidebar": [
+            "builder",
+            "results",
+            "modules",
+            "mutations"
+          ],
+          "mainTop": [
+            "brain",
+            "command",
+            "quickActions"
+          ],
+          "mainBottom": [
+            "planner",
+            "results",
+            "preview"
+          ],
+          "inspector": [
+            "status",
+            "affiliate",
+            "notes"
+          ]
+        }
+      },
+      "feature_state": {
+        "builderMode": "dashboard-builder",
+        "appType": "admin panel",
+        "summaryStyle": "balanced",
+        "themeTone": "dark glass",
+        "quickIdea": "add backend auth api and frontend login flow with protected dashboard routes",
+        "notes": ""
+      },
+      "mutation_log": [
+        {
+          "id": "mut_0lcprxj5",
+          "time": "4/11/2026, 5:18:55 AM",
+          "type": "command-mutation",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Applied a cleaner builder-first layout with a larger preview area."
+        },
+        {
+          "id": "mut_6dzaz0l1",
+          "time": "4/11/2026, 5:18:35 AM",
+          "type": "backend-mutate",
+          "command": "add backend auth api and frontend login flow with protected dashboard routes",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_6qxop3se",
+          "time": "4/11/2026, 5:18:35 AM",
+          "type": "orchestration-update",
+          "command": "add backend auth api and frontend login flow with protected dashboard routes",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_0yzteck7",
+          "time": "4/11/2026, 5:18:06 AM",
+          "type": "backend-mutate",
+          "command": "add backend auth api and frontend login flow with protected dashboard routes",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_9w6v0y3c",
+          "time": "4/11/2026, 5:18:06 AM",
+          "type": "orchestration-update",
+          "command": "add backend auth api and frontend login flow with protected dashboard routes",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_cpxzwu0e",
+          "time": "4/11/2026, 5:17:50 AM",
+          "type": "command-mutation",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Applied a cleaner builder-first layout with a larger preview area."
+        },
+        {
+          "id": "mut_gkyqfhvb",
+          "time": "4/11/2026, 5:17:30 AM",
+          "type": "command-mutation",
+          "command": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+          "details": "Applied a cleaner builder-first layout with a larger preview area."
+        },
+        {
+          "id": "mut_ww3wwbt2",
+          "time": "4/11/2026, 5:17:11 AM",
+          "type": "command-mutation",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Applied a cleaner builder-first layout with a larger preview area."
+        },
+        {
+          "id": "mut_u8j1gsh4",
+          "time": "4/11/2026, 5:13:53 AM",
+          "type": "backend-mutate",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_hxpukyvf",
+          "time": "4/11/2026, 5:13:53 AM",
+          "type": "orchestration-update",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_5bjv5ifn",
+          "time": "4/11/2026, 5:13:33 AM",
+          "type": "backend-mutate",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_sjscdhiq",
+          "time": "4/11/2026, 5:13:33 AM",
+          "type": "orchestration-update",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_8x29kv05",
+          "time": "4/11/2026, 5:13:09 AM",
+          "type": "backend-mutate",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_jgojwem9",
+          "time": "4/11/2026, 5:13:09 AM",
+          "type": "orchestration-update",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_6vj0vncp",
+          "time": "4/11/2026, 5:11:19 AM",
+          "type": "backend-mutate",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_60hv7me5",
+          "time": "4/11/2026, 5:11:19 AM",
+          "type": "orchestration-update",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Orchestrated project proj-20260411091013 with 41 files."
+        },
+        {
+          "id": "mut_lpzygtc4",
+          "time": "4/11/2026, 5:10:13 AM",
+          "type": "backend-mutate",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "App type \u2192 admin panel | Builder mode \u2192 dashboard-builder | Files \u2192 17 | Routes \u2192 4 | Components \u2192 8"
+        },
+        {
+          "id": "mut_kmagh6dg",
+          "time": "4/11/2026, 5:10:13 AM",
+          "type": "orchestration-create",
+          "command": "improve this builder ui and make the preview larger on the side",
+          "details": "Orchestrated project proj-20260411091013 with 37 files."
+        }
+      ],
+      "command_history": [
+        {
+          "id": "cmd_pdiiwy3l",
+          "prompt": "improve this builder ui and make the preview larger on the side",
+          "time": "4/11/2026, 5:18:55 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_ivlss3ph",
+          "prompt": "add backend auth api and frontend login flow with protected dashboard routes\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:18:35 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_o055szbo",
+          "prompt": "add backend auth api and frontend login flow with protected dashboard routes\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:18:06 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_khppiufg",
+          "prompt": "improve this builder ui and make the preview larger on the side",
+          "time": "4/11/2026, 5:17:50 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_acqhylgd",
+          "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+          "time": "4/11/2026, 5:17:30 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_hk9vymsd",
+          "prompt": "improve this builder ui and make the preview larger on the side",
+          "time": "4/11/2026, 5:17:11 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_b79937po",
+          "prompt": "improve this builder ui and make the preview larger on the side\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:13:53 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_jmfo99ur",
+          "prompt": "improve this builder ui and make the preview larger on the side\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:13:33 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_6xpnk4kq",
+          "prompt": "improve this builder ui and make the preview larger on the side\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:13:09 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_f37v72pr",
+          "prompt": "improve this builder ui and make the preview larger on the side\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows",
+          "time": "4/11/2026, 5:11:19 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        },
+        {
+          "id": "cmd_ta7liib5",
+          "prompt": "improve this builder ui and make the preview larger on the side\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Public app with optional guest mode\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence",
+          "time": "4/11/2026, 5:10:13 AM",
+          "appType": "admin panel",
+          "builderMode": "dashboard-builder"
+        }
+      ],
+      "saved_results": [],
+      "ui_mode": "chat",
+      "simple_flow_step": "builder",
+      "simple_draft": {
+        "starterKey": "assistant",
+        "appName": "My Assistant",
+        "mainGoal": "Answer questions, call tools, and guide the user",
+        "style": "Dark glass"
+      },
+      "mutation_versions": [],
+      "system_planner": {
+        "systems": [
+          "billing",
+          "tools",
+          "dashboard",
+          "storage",
+          "auth",
+          "settings",
+          "ai_tools",
+          "admin"
+        ],
+        "architecture": {
+          "frontend": "React + Vite app shell",
+          "backend": "FastAPI or Node API with dedicated service endpoints",
+          "auth": "Protected routes + session tokens",
+          "data": "Local persistence first, ready to upgrade to DB/API"
+        },
+        "bundles": [
+          "Billing bundle \u2192 plan cards, paywall, subscription actions",
+          "Tools bundle \u2192 calculators, workflows, result pages",
+          "Dashboard bundle \u2192 home summary, stats, recent activity",
+          "Storage bundle \u2192 saved items, history, local/API persistence",
+          "Auth bundle \u2192 login view, route guards, account state",
+          "Settings bundle \u2192 preferences, profile, environment values",
+          "AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring",
+          "Admin bundle \u2192 operator pages, roles, team workflows"
+        ],
+        "complexity": "mvp",
+        "summary": "8 systems planned for a admin panel using dashboard-builder."
+      },
+      "generated_app_monetization": null,
+      "generated_file_tree": [
+        {
+          "path": "frontend/src/App.jsx",
+          "kind": "file",
+          "role": "root app"
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "kind": "file",
+          "role": "entry"
+        },
+        {
+          "path": "frontend/src/styles/app.css",
+          "kind": "file",
+          "role": "global styles"
+        },
+        {
+          "path": "frontend/src/components",
+          "kind": "folder",
+          "role": "ui components"
+        },
+        {
+          "path": "frontend/src/pages",
+          "kind": "folder",
+          "role": "pages"
+        },
+        {
+          "path": "frontend/src/lib",
+          "kind": "folder",
+          "role": "helpers"
+        },
+        {
+          "path": "backend/main.py",
+          "kind": "file",
+          "role": "api server"
+        },
+        {
+          "path": "backend/requirements.txt",
+          "kind": "file",
+          "role": "backend deps"
+        },
+        {
+          "path": "frontend/src/pages/DashboardPage.jsx",
+          "kind": "file",
+          "role": "dashboard page"
+        },
+        {
+          "path": "frontend/src/components/Sidebar.jsx",
+          "kind": "file",
+          "role": "navigation"
+        },
+        {
+          "path": "frontend/src/components/KpiCard.jsx",
+          "kind": "file",
+          "role": "metrics card"
+        },
+        {
+          "path": "frontend/src/components/InspectorPanel.jsx",
+          "kind": "file",
+          "role": "details panel"
+        },
+        {
+          "path": "frontend/src/pages/LoginPage.jsx",
+          "kind": "file",
+          "role": "authentication"
+        },
+        {
+          "path": "frontend/src/lib/auth.js",
+          "kind": "file",
+          "role": "auth helpers"
+        },
+        {
+          "path": "frontend/src/lib/api.js",
+          "kind": "file",
+          "role": "api client"
+        },
+        {
+          "path": "frontend/src/hooks/useItems.js",
+          "kind": "file",
+          "role": "data hook"
+        },
+        {
+          "path": "backend/data_store.py",
+          "kind": "file",
+          "role": "supabase storage layer"
+        }
+      ],
+      "routes": [
+        {
+          "path": "/",
+          "component": "App",
+          "reason": "root route"
+        },
+        {
+          "path": "/dashboard",
+          "component": "DashboardPage",
+          "reason": "main admin workspace"
+        },
+        {
+          "path": "/settings",
+          "component": "SettingsPage",
+          "reason": "workspace settings"
+        },
+        {
+          "path": "/login",
+          "component": "LoginPage",
+          "reason": "auth entry"
+        }
+      ],
+      "components": [
+        {
+          "name": "CommandBar",
+          "purpose": "captures builder commands"
+        },
+        {
+          "name": "LivePreview",
+          "purpose": "renders structural preview"
+        },
+        {
+          "name": "StatusBadge",
+          "purpose": "shows api and workspace status"
+        },
+        {
+          "name": "Sidebar",
+          "purpose": "left navigation"
+        },
+        {
+          "name": "KpiCard",
+          "purpose": "metric summaries"
+        },
+        {
+          "name": "InspectorPanel",
+          "purpose": "details and controls"
+        },
+        {
+          "name": "DataList",
+          "purpose": "renders persisted records"
+        },
+        {
+          "name": "AuthGate",
+          "purpose": "guards protected screens"
+        }
+      ],
+      "generated_files": [
+        {
+          "path": "frontend/src/main.jsx",
+          "content": "import React from \"react\";\nimport ReactDOM from \"react-dom/client\";\nimport App from \"./App.jsx\";\nimport \"./styles/app.css\";\n\nReactDOM.createRoot(document.getElementById(\"root\")).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/App.jsx",
+          "content": "import React from \"react\";\nimport { DashboardPage } from \"./pages/DashboardPage.jsx\";\n\nexport default function App() {\n  return <DashboardPage />;\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/styles/app.css",
+          "content": ":root {\n  color-scheme: dark;\n  --bg: #07111f;\n  --panel: rgba(13, 25, 43, 0.88);\n  --panel-border: rgba(148, 163, 184, 0.16);\n  --text: #e5eefc;\n  --muted: #93a4bf;\n  --accent: #66d9ef;\n  --accent-2: #8b5cf6;\n}\n* { box-sizing: border-box; }\nbody {\n  margin: 0;\n  font-family: Inter, system-ui, Arial, sans-serif;\n  background: radial-gradient(circle at top, #12203a, #07111f 55%);\n  color: var(--text);\n}\nbutton, input, textarea { font: inherit; }\n.app-shell { min-height: 100vh; padding: 24px; display: grid; gap: 18px; }\n.panel { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 20px; padding: 18px; }\n.row { display: grid; gap: 18px; }\n.row.two { grid-template-columns: 260px 1fr; }\n.row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }\n.pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 12px; border: 1px solid rgba(148, 163, 184, 0.18); background: rgba(255,255,255,0.04); color: var(--muted); }\n.primary-btn { border: none; border-radius: 999px; padding: 12px 18px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #07111f; }\n.muted { color: var(--muted); }\n.card-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }\n.card { border: 1px solid rgba(148,163,184,.14); border-radius: 16px; padding: 16px; background: rgba(255,255,255,0.03); }\n.input { width: 100%; border-radius: 14px; border: 1px solid rgba(148,163,184,.16); background: rgba(255,255,255,.04); color: var(--text); padding: 12px 14px; }\n.list { display: grid; gap: 10px; margin-top: 12px; }\n.item { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(148,163,184,.12); border-radius: 12px; background: rgba(255,255,255,.03); }\n@media (max-width: 900px) { .row.two, .row.three { grid-template-columns: 1fr; } }",
+          "language": "css"
+        },
+        {
+          "path": "frontend/src/lib/api.js",
+          "content": "const API_BASE = import.meta.env.VITE_API_URL || \"http://localhost:8000\";\n\nasync function request(path, options = {}) {\n  const response = await fetch(`${API_BASE}${path}`, {\n    headers: { \"Content-Type\": \"application/json\", ...(options.headers || {}) },\n    ...options,\n  });\n  if (!response.ok) {\n    throw new Error(`API error: ${response.status}`);\n  }\n  return response.json();\n}\n\nexport async function getItems() {\n  return request(\"/api/items\");\n}\n\nexport async function createItem(payload) {\n  return request(\"/api/items\", { method: \"POST\", body: JSON.stringify(payload) });\n}\n\nexport async function updateItem(id, payload) {\n  return request(`/api/items/${id}`, { method: \"PUT\", body: JSON.stringify(payload) });\n}\n\nexport async function deleteItem(id) {\n  return request(`/api/items/${id}`, { method: \"DELETE\" });\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/package.json",
+          "content": "{\n  \"name\": \"generated-builder-app\",\n  \"private\": true,\n  \"version\": \"0.0.1\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview\"\n  },\n  \"dependencies\": {\n    \"react\": \"^18.3.1\",\n    \"react-dom\": \"^18.3.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"^5.4.10\"\n  }\n}",
+          "language": "json"
+        },
+        {
+          "path": "frontend/.env.example",
+          "content": "VITE_API_URL=http://localhost:8000\n",
+          "language": "text"
+        },
+        {
+          "path": "backend/main.py",
+          "content": "from fastapi import FastAPI, HTTPException\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom pydantic import BaseModel, Field\nfrom typing import Any, Dict, List\nfrom data_store import list_items, create_item, update_item, delete_item\n\napp = FastAPI(title=\"Generated App Backend\")\n\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=[\"*\"],\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n)\n\nclass ItemPayload(BaseModel):\n    title: str = \"Untitled\"\n    status: str = \"draft\"\n    value: Any = None\n    meta: Dict[str, Any] = Field(default_factory=dict)\n\n@app.get(\"/health\")\ndef health():\n    return {\"status\": \"ok\", \"persistence\": \"supabase\"}\n\n@app.get(\"/api/items\")\ndef get_items():\n    return list_items()\n\n@app.post(\"/api/items\")\ndef post_item(payload: ItemPayload):\n    return create_item(payload.model_dump())\n\n@app.put(\"/api/items/{item_id}\")\ndef put_item(item_id: int, payload: ItemPayload):\n    updated = update_item(item_id, payload.model_dump())\n    if not updated:\n        raise HTTPException(status_code=404, detail=\"Item not found\")\n    return updated\n\n@app.delete(\"/api/items/{item_id}\")\ndef remove_item(item_id: int):\n    deleted = delete_item(item_id)\n    if not deleted:\n        raise HTTPException(status_code=404, detail=\"Item not found\")\n    return {\"ok\": True, \"id\": item_id}",
+          "language": "python"
+        },
+        {
+          "path": "backend/requirements.txt",
+          "content": "fastapi\nuvicorn[standard]\npydantic\nsupabase\npython-dotenv",
+          "language": "text"
+        },
+        {
+          "path": "backend/.env.example",
+          "content": "PORT=8000\nSUPABASE_URL=your_supabase_url\nSUPABASE_KEY=your_supabase_key",
+          "language": "text"
+        },
+        {
+          "path": "README.md",
+          "content": "# Generated App\n\n## App type\nadmin panel\n\n## Systems\nbilling, tools, dashboard, storage, auth, settings, ai_tools, admin\n\n## Persistence\nsupabase\n\n## Frontend\n```bash\ncd frontend\nnpm install\nnpm run dev\n```\n\n## Backend\n```bash\ncd backend\npip install -r requirements.txt\nuvicorn main:app --reload --port 8000\n```",
+          "language": "markdown"
+        },
+        {
+          "path": "frontend/src/pages/DashboardPage.jsx",
+          "content": "import React, { useEffect, useState } from \"react\";\nimport { Sidebar } from \"../components/Sidebar.jsx\";\nimport { KpiCard } from \"../components/KpiCard.jsx\";\nimport { InspectorPanel } from \"../components/InspectorPanel.jsx\";\nimport { getItems } from \"../lib/api.js\";\n\nexport function DashboardPage() {\n  const [items, setItems] = useState([]);\n  useEffect(() => { getItems().then(setItems).catch(() => setItems([])); }, []);\n\n  return (\n    <div className=\"app-shell\">\n      <div className=\"panel\">\n        <div className=\"pill\">Admin dashboard</div>\n        <h1>CRM Dashboard</h1>\n        <p className=\"muted\">add backend auth api and frontend login flow with protected dashboard routes\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows</p>\n      </div>\n      <div className=\"row two\">\n        <Sidebar />\n        <div className=\"row\">\n          <div className=\"card-grid\">\n            <KpiCard title=\"Records\" value={String(items.length)} />\n            <KpiCard title=\"Status\" value=\"Connected\" />\n            <KpiCard title=\"Flow\" value=\"Live API\" />\n          </div>\n          <div className=\"panel\">\n            <h2>Recent records</h2>\n            <div className=\"list\">{items.map(item => <div className=\"item\" key={item.id}><span>{item.title}</span><span className=\"muted\">{item.status}</span></div>)}</div>\n          </div>\n        </div>\n      </div>\n      <InspectorPanel />\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/Sidebar.jsx",
+          "content": "import React from \"react\";\n\nexport function Sidebar() {\n  return (\n    <aside className=\"panel\">\n      <h3>Navigation</h3>\n      <div className=\"card-grid\">\n        <div className=\"card\">Overview</div>\n        <div className=\"card\">Customers</div>\n        <div className=\"card\">Deals</div>\n        <div className=\"card\">Reports</div>\n      </div>\n    </aside>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/KpiCard.jsx",
+          "content": "import React from \"react\";\n\nexport function KpiCard({ title, value }) {\n  return (\n    <div className=\"card\">\n      <div className=\"pill\">{title}</div>\n      <h3>{value}</h3>\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/InspectorPanel.jsx",
+          "content": "import React from \"react\";\n\nexport function InspectorPanel() {\n  return (\n    <section className=\"panel\">\n      <h3>Inspector</h3>\n      <p className=\"muted\">Use this space for details, selected records, and quick controls.</p>\n    </section>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/pages/LoginPage.jsx",
+          "content": "import React, { useState } from \"react\";\nimport { signIn } from \"../lib/auth.js\";\n\nexport function LoginPage() {\n  const [email, setEmail] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n\n  function handleSubmit() {\n    signIn(email, password);\n  }\n\n  return (\n    <div className=\"app-shell\">\n      <section className=\"panel\">\n        <h1>Login</h1>\n        <div className=\"row\">\n          <input className=\"input\" placeholder=\"Email\" value={email} onChange={(e) => setEmail(e.target.value)} />\n          <input className=\"input\" placeholder=\"Password\" type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />\n          <button className=\"primary-btn\" onClick={handleSubmit}>Sign in</button>\n        </div>\n      </section>\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/lib/auth.js",
+          "content": "export function signIn(email, password) {\n  const token = `demo-token-${email || \"guest\"}`;\n  localStorage.setItem(\"builder_token\", token);\n  return { ok: true, email, token };\n}\n\nexport function getToken() {\n  return localStorage.getItem(\"builder_token\") || \"\";\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/hooks/useItems.js",
+          "content": "import { useEffect, useState } from \"react\";\nimport { getItems, createItem, updateItem, deleteItem } from \"../lib/api.js\";\n\nexport function useItems() {\n  const [items, setItems] = useState([]);\n  const [loading, setLoading] = useState(true);\n  const [error, setError] = useState(\"\");\n\n  async function refresh() {\n    try {\n      setLoading(true);\n      setError(\"\");\n      const data = await getItems();\n      setItems(data);\n    } catch (err) {\n      setError(err.message || \"Failed to load items\");\n    } finally {\n      setLoading(false);\n    }\n  }\n\n  async function addItem(payload) {\n    const created = await createItem(payload);\n    setItems((prev) => [created, ...prev]);\n    return created;\n  }\n\n  async function saveItem(id, payload) {\n    const updated = await updateItem(id, payload);\n    setItems((prev) => prev.map((item) => item.id === id ? updated : item));\n    return updated;\n  }\n\n  async function removeItem(id) {\n    await deleteItem(id);\n    setItems((prev) => prev.filter((item) => item.id !== id));\n  }\n\n  useEffect(() => { refresh(); }, []);\n\n  return { items, loading, error, refresh, addItem, saveItem, removeItem };\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "backend/data_store.py",
+          "content": "import os\nfrom supabase import create_client\n\nSUPABASE_URL = os.getenv(\"SUPABASE_URL\", \"\")\nSUPABASE_KEY = os.getenv(\"SUPABASE_KEY\", \"\")\nclient = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None\n\n\ndef list_items():\n    if not client:\n        return []\n    result = client.table(\"items\").select(\"*\").order(\"id\", desc=True).execute()\n    return result.data or []\n\n\ndef create_item(payload):\n    if not client:\n        return {\"id\": 1, **payload}\n    result = client.table(\"items\").insert(payload).execute()\n    return (result.data or [payload])[0]\n\n\ndef update_item(item_id, payload):\n    if not client:\n        return {\"id\": item_id, **payload}\n    result = client.table(\"items\").update(payload).eq(\"id\", item_id).execute()\n    data = result.data or []\n    return data[0] if data else None\n\n\ndef delete_item(item_id):\n    if not client:\n        return True\n    client.table(\"items\").delete().eq(\"id\", item_id).execute()\n    return True",
+          "language": "python"
+        },
+        {
+          "path": "backend/supabase_schema.sql",
+          "content": "create table if not exists items (\n  id bigint generated by default as identity primary key,\n  title text not null,\n  status text not null default 'draft',\n  value text,\n  meta jsonb default '{}'::jsonb\n);",
+          "language": "sql"
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "content": "import React from \"react\";\nimport ReactDOM from \"react-dom/client\";\nimport App from \"./App.jsx\";\nimport \"./styles/app.css\";\n\nReactDOM.createRoot(document.getElementById(\"root\")).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/App.jsx",
+          "content": "import React from \"react\";\nimport { DashboardPage } from \"./pages/DashboardPage.jsx\";\n\nexport default function App() {\n  return <DashboardPage />;\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/styles/app.css",
+          "content": ":root {\n  color-scheme: dark;\n  --bg: #07111f;\n  --panel: rgba(13, 25, 43, 0.88);\n  --panel-border: rgba(148, 163, 184, 0.16);\n  --text: #e5eefc;\n  --muted: #93a4bf;\n  --accent: #66d9ef;\n  --accent-2: #8b5cf6;\n}\n* { box-sizing: border-box; }\nbody {\n  margin: 0;\n  font-family: Inter, system-ui, Arial, sans-serif;\n  background: radial-gradient(circle at top, #12203a, #07111f 55%);\n  color: var(--text);\n}\nbutton, input, textarea { font: inherit; }\n.app-shell { min-height: 100vh; padding: 24px; display: grid; gap: 18px; }\n.panel { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 20px; padding: 18px; }\n.row { display: grid; gap: 18px; }\n.row.two { grid-template-columns: 260px 1fr; }\n.row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }\n.pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 12px; border: 1px solid rgba(148, 163, 184, 0.18); background: rgba(255,255,255,0.04); color: var(--muted); }\n.primary-btn { border: none; border-radius: 999px; padding: 12px 18px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #07111f; }\n.muted { color: var(--muted); }\n.card-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }\n.card { border: 1px solid rgba(148,163,184,.14); border-radius: 16px; padding: 16px; background: rgba(255,255,255,0.03); }\n.input { width: 100%; border-radius: 14px; border: 1px solid rgba(148,163,184,.16); background: rgba(255,255,255,.04); color: var(--text); padding: 12px 14px; }\n.list { display: grid; gap: 10px; margin-top: 12px; }\n.item { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(148,163,184,.12); border-radius: 12px; background: rgba(255,255,255,.03); }\n@media (max-width: 900px) { .row.two, .row.three { grid-template-columns: 1fr; } }",
+          "language": "css"
+        },
+        {
+          "path": "frontend/src/lib/api.js",
+          "content": "const API_BASE = import.meta.env.VITE_API_URL || \"http://localhost:8000\";\n\nasync function request(path, options = {}) {\n  const response = await fetch(`${API_BASE}${path}`, {\n    headers: { \"Content-Type\": \"application/json\", ...(options.headers || {}) },\n    ...options,\n  });\n  if (!response.ok) {\n    throw new Error(`API error: ${response.status}`);\n  }\n  return response.json();\n}\n\nexport async function getItems() {\n  return request(\"/api/items\");\n}\n\nexport async function createItem(payload) {\n  return request(\"/api/items\", { method: \"POST\", body: JSON.stringify(payload) });\n}\n\nexport async function updateItem(id, payload) {\n  return request(`/api/items/${id}`, { method: \"PUT\", body: JSON.stringify(payload) });\n}\n\nexport async function deleteItem(id) {\n  return request(`/api/items/${id}`, { method: \"DELETE\" });\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/package.json",
+          "content": "{\n  \"name\": \"generated-builder-app\",\n  \"private\": true,\n  \"version\": \"0.0.1\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"vite build\",\n    \"preview\": \"vite preview\"\n  },\n  \"dependencies\": {\n    \"react\": \"^18.3.1\",\n    \"react-dom\": \"^18.3.1\"\n  },\n  \"devDependencies\": {\n    \"vite\": \"^5.4.10\"\n  }\n}",
+          "language": "json"
+        },
+        {
+          "path": "frontend/.env.example",
+          "content": "VITE_API_URL=http://localhost:8000\n",
+          "language": "text"
+        },
+        {
+          "path": "backend/main.py",
+          "content": "from fastapi import FastAPI, HTTPException\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom pydantic import BaseModel, Field\nfrom typing import Any, Dict, List\nfrom data_store import list_items, create_item, update_item, delete_item\n\napp = FastAPI(title=\"Generated App Backend\")\n\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=[\"*\"],\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n)\n\nclass ItemPayload(BaseModel):\n    title: str = \"Untitled\"\n    status: str = \"draft\"\n    value: Any = None\n    meta: Dict[str, Any] = Field(default_factory=dict)\n\n@app.get(\"/health\")\ndef health():\n    return {\"status\": \"ok\", \"persistence\": \"supabase\"}\n\n@app.get(\"/api/items\")\ndef get_items():\n    return list_items()\n\n@app.post(\"/api/items\")\ndef post_item(payload: ItemPayload):\n    return create_item(payload.model_dump())\n\n@app.put(\"/api/items/{item_id}\")\ndef put_item(item_id: int, payload: ItemPayload):\n    updated = update_item(item_id, payload.model_dump())\n    if not updated:\n        raise HTTPException(status_code=404, detail=\"Item not found\")\n    return updated\n\n@app.delete(\"/api/items/{item_id}\")\ndef remove_item(item_id: int):\n    deleted = delete_item(item_id)\n    if not deleted:\n        raise HTTPException(status_code=404, detail=\"Item not found\")\n    return {\"ok\": True, \"id\": item_id}",
+          "language": "python"
+        },
+        {
+          "path": "backend/requirements.txt",
+          "content": "fastapi\nuvicorn[standard]\npydantic\nsupabase\npython-dotenv",
+          "language": "text"
+        },
+        {
+          "path": "backend/.env.example",
+          "content": "PORT=8000\nSUPABASE_URL=your_supabase_url\nSUPABASE_KEY=your_supabase_key",
+          "language": "text"
+        },
+        {
+          "path": "README.md",
+          "content": "# Generated App\n\n## App type\nadmin panel\n\n## Systems\nbilling, tools, dashboard, storage, auth, settings, ai_tools, admin\n\n## Persistence\nsupabase\n\n## Frontend\n```bash\ncd frontend\nnpm install\nnpm run dev\n```\n\n## Backend\n```bash\ncd backend\npip install -r requirements.txt\nuvicorn main:app --reload --port 8000\n```",
+          "language": "markdown"
+        },
+        {
+          "path": "frontend/src/pages/DashboardPage.jsx",
+          "content": "import React, { useEffect, useState } from \"react\";\nimport { Sidebar } from \"../components/Sidebar.jsx\";\nimport { KpiCard } from \"../components/KpiCard.jsx\";\nimport { InspectorPanel } from \"../components/InspectorPanel.jsx\";\nimport { getItems } from \"../lib/api.js\";\n\nexport function DashboardPage() {\n  const [items, setItems] = useState([]);\n  useEffect(() => { getItems().then(setItems).catch(() => setItems([])); }, []);\n\n  return (\n    <div className=\"app-shell\">\n      <div className=\"panel\">\n        <div className=\"pill\">Admin dashboard</div>\n        <h1>CRM Dashboard</h1>\n        <p className=\"muted\">add backend auth api and frontend login flow with protected dashboard routes\n\nSYSTEM PLANNER\n- Complexity: mvp\n- Systems: billing, tools, dashboard, storage, auth, settings, ai_tools, admin\n- Frontend: React + Vite app shell\n- Backend: FastAPI or Node API with dedicated service endpoints\n- Auth: Protected routes + session tokens\n- Data: Local persistence first, ready to upgrade to DB/API\n- Feature bundles: Billing bundle \u2192 plan cards, paywall, subscription actions | Tools bundle \u2192 calculators, workflows, result pages | Dashboard bundle \u2192 home summary, stats, recent activity | Storage bundle \u2192 saved items, history, local/API persistence | Auth bundle \u2192 login view, route guards, account state | Settings bundle \u2192 preferences, profile, environment values | AI tools bundle \u2192 prompts, chat/scan flow, AI endpoint wiring | Admin bundle \u2192 operator pages, roles, team workflows</p>\n      </div>\n      <div className=\"row two\">\n        <Sidebar />\n        <div className=\"row\">\n          <div className=\"card-grid\">\n            <KpiCard title=\"Records\" value={String(items.length)} />\n            <KpiCard title=\"Status\" value=\"Connected\" />\n            <KpiCard title=\"Flow\" value=\"Live API\" />\n          </div>\n          <div className=\"panel\">\n            <h2>Recent records</h2>\n            <div className=\"list\">{items.map(item => <div className=\"item\" key={item.id}><span>{item.title}</span><span className=\"muted\">{item.status}</span></div>)}</div>\n          </div>\n        </div>\n      </div>\n      <InspectorPanel />\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/Sidebar.jsx",
+          "content": "import React from \"react\";\n\nexport function Sidebar() {\n  return (\n    <aside className=\"panel\">\n      <h3>Navigation</h3>\n      <div className=\"card-grid\">\n        <div className=\"card\">Overview</div>\n        <div className=\"card\">Customers</div>\n        <div className=\"card\">Deals</div>\n        <div className=\"card\">Reports</div>\n      </div>\n    </aside>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/KpiCard.jsx",
+          "content": "import React from \"react\";\n\nexport function KpiCard({ title, value }) {\n  return (\n    <div className=\"card\">\n      <div className=\"pill\">{title}</div>\n      <h3>{value}</h3>\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/components/InspectorPanel.jsx",
+          "content": "import React from \"react\";\n\nexport function InspectorPanel() {\n  return (\n    <section className=\"panel\">\n      <h3>Inspector</h3>\n      <p className=\"muted\">Use this space for details, selected records, and quick controls.</p>\n    </section>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/pages/LoginPage.jsx",
+          "content": "import React, { useState } from \"react\";\nimport { signIn } from \"../lib/auth.js\";\n\nexport function LoginPage() {\n  const [email, setEmail] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n\n  function handleSubmit() {\n    signIn(email, password);\n  }\n\n  return (\n    <div className=\"app-shell\">\n      <section className=\"panel\">\n        <h1>Login</h1>\n        <div className=\"row\">\n          <input className=\"input\" placeholder=\"Email\" value={email} onChange={(e) => setEmail(e.target.value)} />\n          <input className=\"input\" placeholder=\"Password\" type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />\n          <button className=\"primary-btn\" onClick={handleSubmit}>Sign in</button>\n        </div>\n      </section>\n    </div>\n  );\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/lib/auth.js",
+          "content": "export function signIn(email, password) {\n  const token = `demo-token-${email || \"guest\"}`;\n  localStorage.setItem(\"builder_token\", token);\n  return { ok: true, email, token };\n}\n\nexport function getToken() {\n  return localStorage.getItem(\"builder_token\") || \"\";\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "frontend/src/hooks/useItems.js",
+          "content": "import { useEffect, useState } from \"react\";\nimport { getItems, createItem, updateItem, deleteItem } from \"../lib/api.js\";\n\nexport function useItems() {\n  const [items, setItems] = useState([]);\n  const [loading, setLoading] = useState(true);\n  const [error, setError] = useState(\"\");\n\n  async function refresh() {\n    try {\n      setLoading(true);\n      setError(\"\");\n      const data = await getItems();\n      setItems(data);\n    } catch (err) {\n      setError(err.message || \"Failed to load items\");\n    } finally {\n      setLoading(false);\n    }\n  }\n\n  async function addItem(payload) {\n    const created = await createItem(payload);\n    setItems((prev) => [created, ...prev]);\n    return created;\n  }\n\n  async function saveItem(id, payload) {\n    const updated = await updateItem(id, payload);\n    setItems((prev) => prev.map((item) => item.id === id ? updated : item));\n    return updated;\n  }\n\n  async function removeItem(id) {\n    await deleteItem(id);\n    setItems((prev) => prev.filter((item) => item.id !== id));\n  }\n\n  useEffect(() => { refresh(); }, []);\n\n  return { items, loading, error, refresh, addItem, saveItem, removeItem };\n}",
+          "language": "javascript"
+        },
+        {
+          "path": "backend/data_store.py",
+          "content": "import os\nfrom supabase import create_client\n\nSUPABASE_URL = os.getenv(\"SUPABASE_URL\", \"\")\nSUPABASE_KEY = os.getenv(\"SUPABASE_KEY\", \"\")\nclient = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None\n\n\ndef list_items():\n    if not client:\n        return []\n    result = client.table(\"items\").select(\"*\").order(\"id\", desc=True).execute()\n    return result.data or []\n\n\ndef create_item(payload):\n    if not client:\n        return {\"id\": 1, **payload}\n    result = client.table(\"items\").insert(payload).execute()\n    return (result.data or [payload])[0]\n\n\ndef update_item(item_id, payload):\n    if not client:\n        return {\"id\": item_id, **payload}\n    result = client.table(\"items\").update(payload).eq(\"id\", item_id).execute()\n    data = result.data or []\n    return data[0] if data else None\n\n\ndef delete_item(item_id):\n    if not client:\n        return True\n    client.table(\"items\").delete().eq(\"id\", item_id).execute()\n    return True",
+          "language": "python"
+        },
+        {
+          "path": "backend/supabase_schema.sql",
+          "content": "create table if not exists items (\n  id bigint generated by default as identity primary key,\n  title text not null,\n  status text not null default 'draft',\n  value text,\n  meta jsonb default '{}'::jsonb\n);",
+          "language": "sql"
+        },
+        {
+          "path": "frontend/index.html",
+          "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Builder Generated App</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.jsx\"></script>\n  </body>\n</html>\n",
+          "language": "html",
+          "generatedBy": "smart-package"
+        },
+        {
+          "path": ".env.example",
+          "content": "PROJECT_NAME=builder-generated-project\nVITE_API_URL=http://127.0.0.1:8000\nOPENAI_API_KEY=your_key_here",
+          "language": "env",
+          "generatedBy": "smart-package"
+        },
+        {
+          "path": ".gitignore",
+          "content": "node_modules/\ndist/\n.DS_Store\n.env\n.env.local\n.env.*.local\n__pycache__/\n*.pyc\n.venv/\nvenv/\n.idea/\n.vscode/\nfrontend/node_modules/\nfrontend/dist/",
+          "language": "text",
+          "generatedBy": "smart-package"
+        }
+      ],
+      "selected_generated_file_path": "frontend/src/main.jsx",
+      "orchestration_history": [
+        {
+          "id": "orch_a3nk5ykm",
+          "projectId": "proj-20260411091013",
+          "prompt": "add backend auth api and frontend login flow with protected dashboard routes",
+          "time": "4/11/2026, 5:18:35 AM"
+        }
+      ],
+      "builder_chat_history": [
+        {
+          "id": "chat_h0rb97y1",
+          "time": "4/11/2026, 5:18:55 AM",
+          "role": "assistant",
+          "text": "I updated this builder for you. Applied a cleaner builder-first layout with a larger preview area.",
+          "meta": "Layout: focus / split / spacious"
+        },
+        {
+          "id": "chat_tbqrqfap",
+          "time": "4/11/2026, 5:18:55 AM",
+          "role": "user",
+          "text": "improve this builder ui and make the preview larger on the side",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_9ywe7dqr",
+          "time": "4/11/2026, 5:18:35 AM",
+          "role": "assistant",
+          "text": "I applied this improvement now: Add login.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_bnb4wpbt",
+          "time": "4/11/2026, 5:18:34 AM",
+          "role": "assistant",
+          "text": "I can keep moving this project forward locally.",
+          "meta": "Project-aware answer prepared.",
+          "questions": [],
+          "actions": [
+            {
+              "label": "Add login",
+              "prompt": "add backend auth api and frontend login flow with protected dashboard routes",
+              "mode": "evolve",
+              "reason": "Authentication is a strong next step for a product-style app."
+            },
+            {
+              "label": "Add saved data",
+              "prompt": "add backend endpoints and frontend saved data flow for reports and history",
+              "mode": "evolve",
+              "reason": "Saved data makes the app more useful between visits."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Add login",
+                "reason": "Authentication is a strong next step for a product-style app."
+              }
+            ]
+          },
+          "researchFindings": [],
+          "knowledgeHits": [],
+          "researchRecommendation": null
+        },
+        {
+          "id": "chat_q958y4ji",
+          "time": "4/11/2026, 5:18:34 AM",
+          "role": "user",
+          "text": "Keep improving this app",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_d3k16ed3",
+          "time": "4/11/2026, 5:18:06 AM",
+          "role": "assistant",
+          "text": "I applied this improvement now: Add login.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_p385kj2z",
+          "time": "4/11/2026, 5:18:06 AM",
+          "role": "assistant",
+          "text": "I can keep moving this project forward locally.",
+          "meta": "Project-aware answer prepared.",
+          "questions": [],
+          "actions": [
+            {
+              "label": "Add login",
+              "prompt": "add backend auth api and frontend login flow with protected dashboard routes",
+              "mode": "evolve",
+              "reason": "Authentication is a strong next step for a product-style app."
+            },
+            {
+              "label": "Add saved data",
+              "prompt": "add backend endpoints and frontend saved data flow for reports and history",
+              "mode": "evolve",
+              "reason": "Saved data makes the app more useful between visits."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Add login",
+                "reason": "Authentication is a strong next step for a product-style app."
+              }
+            ]
+          },
+          "researchFindings": [],
+          "knowledgeHits": [],
+          "researchRecommendation": null
+        },
+        {
+          "id": "chat_tpzmxncl",
+          "time": "4/11/2026, 5:18:06 AM",
+          "role": "user",
+          "text": "Keep improving this app",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_0v4nn77g",
+          "time": "4/11/2026, 5:17:50 AM",
+          "role": "assistant",
+          "text": "I updated this builder for you. Applied a cleaner builder-first layout with a larger preview area.",
+          "meta": "Layout: focus / split / spacious"
+        },
+        {
+          "id": "chat_5368h5k4",
+          "time": "4/11/2026, 5:17:50 AM",
+          "role": "user",
+          "text": "improve this builder ui and make the preview larger on the side",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_fka9kf0s",
+          "time": "4/11/2026, 5:17:30 AM",
+          "role": "assistant",
+          "text": "I updated this builder for you. Applied a cleaner builder-first layout with a larger preview area.",
+          "meta": "Layout: focus / split / spacious"
+        },
+        {
+          "id": "chat_1x3mmjlq",
+          "time": "4/11/2026, 5:17:30 AM",
+          "role": "user",
+          "text": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_wywy60q3",
+          "time": "4/11/2026, 5:17:11 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "Applied a cleaner builder-first layout with a larger preview area."
+        },
+        {
+          "id": "chat_6dwjx7lg",
+          "time": "4/11/2026, 5:17:11 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_0x1wt8hy",
+          "time": "4/11/2026, 5:17:11 AM",
+          "role": "user",
+          "text": "search for ai builder improvements",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_p6o2l6ws",
+          "time": "4/11/2026, 5:13:53 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_wwhtaeun",
+          "time": "4/11/2026, 5:13:53 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_9vn73m6l",
+          "time": "4/11/2026, 5:13:53 AM",
+          "role": "user",
+          "text": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_vpqf2k6i",
+          "time": "4/11/2026, 5:13:33 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_mvc1rpe5",
+          "time": "4/11/2026, 5:13:33 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_ji9skl5c",
+          "time": "4/11/2026, 5:13:33 AM",
+          "role": "user",
+          "text": "improve this builder ui and make the preview larger on the side",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_b2w7vq4s",
+          "time": "4/11/2026, 5:13:09 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_b7wy3kl3",
+          "time": "4/11/2026, 5:13:09 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_2juz5t80",
+          "time": "4/11/2026, 5:13:09 AM",
+          "role": "user",
+          "text": "search for ai builder improvements",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_jyfkxq6f",
+          "time": "4/11/2026, 5:11:57 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_75jyan31",
+          "time": "4/11/2026, 5:11:57 AM",
+          "role": "user",
+          "text": "any suggestion to get ia builder smarter",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_tgdb7dd3",
+          "time": "4/11/2026, 5:11:19 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_oldyfwcs",
+          "time": "4/11/2026, 5:11:19 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_db86qjoj",
+          "time": "4/11/2026, 5:11:19 AM",
+          "role": "user",
+          "text": "Keep improving the ai builder",
+          "meta": "Project proj-20260411091013"
+        },
+        {
+          "id": "chat_4z425vg3",
+          "time": "4/11/2026, 5:10:13 AM",
+          "role": "assistant",
+          "text": "I applied this builder-focused improvement now: Make preview bigger.",
+          "meta": "App type detected: admin panel \u2022 Builder mode detected: dashboard-builder \u2022 Layout shell: dashboard"
+        },
+        {
+          "id": "chat_i36vv18h",
+          "time": "4/11/2026, 5:10:13 AM",
+          "role": "assistant",
+          "text": "Good builder-AI improvements: make the builder stay on builder context, reduce repeated suggestion cards, simplify the chat decisions, improve preview visibility, and tighten the layout so changes are easier to evaluate. Pick one below, or say keep improving and I will apply one automatically.",
+          "meta": "Builder-only suggestion plan ready.",
+          "actions": [
+            {
+              "label": "Make preview bigger",
+              "prompt": "improve this builder ui and make the preview larger on the side",
+              "mode": "evolve",
+              "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+            },
+            {
+              "label": "Simplify builder UI",
+              "prompt": "simplify this ui and hide project details",
+              "mode": "evolve",
+              "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+            },
+            {
+              "label": "Improve chat flow",
+              "prompt": "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+              "mode": "evolve",
+              "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+            },
+            {
+              "label": "Shrink header",
+              "prompt": "shrink the header and give more space to chat and preview",
+              "mode": "evolve",
+              "reason": "Creates more working space so each improvement cycle feels faster."
+            }
+          ],
+          "advice": {
+            "better_options": [
+              {
+                "label": "Make preview bigger",
+                "reason": "Shows app changes faster so you can evaluate each improvement without extra clicks."
+              },
+              {
+                "label": "Simplify builder UI",
+                "reason": "Reduces clutter and keeps attention on chat, preview, and the next action."
+              },
+              {
+                "label": "Improve chat flow",
+                "reason": "Makes suggestions easier to follow and avoids repetitive responses."
+              }
+            ],
+            "cautions": [
+              {
+                "label": "Project context can take over",
+                "reason": "Builder suggestion requests should not inherit the active RV or app project context."
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat_juv8ummb",
+          "time": "4/11/2026, 5:10:13 AM",
+          "role": "user",
+          "text": "can you search improve suggestion  for ia builder?",
+          "meta": "New project idea"
+        }
+      ],
+      "builder_chat_draft": "",
+      "builder_project_memory": {
+        "project_id": "proj-20260411091013",
+        "project_summary": "improve this builder ui and make the preview larger on the side",
+        "app_type": "admin panel",
+        "builder_mode": "dashboard-builder",
+        "systems": [
+          "billing",
+          "tools",
+          "dashboard",
+          "storage",
+          "auth",
+          "settings",
+          "ai_tools",
+          "admin"
+        ],
+        "has_generated_app": true,
+        "workspace_edit_enabled": true,
+        "last_user_request": "improve this builder ui and make the preview larger on the side",
+        "current_conversation_topic": "builder_ai",
+        "global_knowledge_count": 3,
+        "builder_summary": "This chat can help improve the builder UI as well as generated apps.",
+        "research_recommendation": null,
+        "last_builder_workspace_request": "improve this builder ui and make the preview larger on the side",
+        "workspace_last_scope": "",
+        "dismissed_assistant_action_id": "",
+        "accepted_assistant_action_id": "",
+        "accepted_assistant_action_label": ""
+      },
+      "builder_assistant_prefs": {
+        "name": "Builder Copilot",
+        "favoriteFocuses": [
+          "preview",
+          "clarity",
+          "chat"
+        ],
+        "recentRequests": [
+          "improve this builder ui and make the preview larger on the side",
+          "improve this builder ui and make the preview larger on the side",
+          "improve this builder ui and make chat actions clearer with fewer repeated suggestion cards",
+          "improve this builder ui and make the preview larger on the side"
+        ],
+        "lastRequest": "improve this builder ui and make the preview larger on the side",
+        "preferredRules": [
+          "Keep preview large",
+          "Keep chat simple"
+        ],
+        "pinnedGoals": []
+      },
+      "full_stack_scope": "fullstack",
+      "chat_reply_preference": "balanced",
+      "builder_improvement_mode": "auto",
+      "selected_preview_route": "/",
+      "updated_at": "2026-04-11T13:24:04.659335+00:00"
+    }
+  }
+}

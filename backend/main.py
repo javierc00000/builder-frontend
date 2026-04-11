@@ -1,9 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import re
 import json
+from pathlib import Path
+from datetime import datetime, timezone
 
 app = FastAPI(title="Builder Backend v6 - Data Flow Generator")
 
@@ -27,7 +29,7 @@ def home():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "service": "builder-backend-v6", "data_flow": True}
+  return {"status": "healthy", "service": "builder-backend-v6", "data_flow": True, "workspace_edit": True}
 
 
 class ApplianceItem(BaseModel):
@@ -65,6 +67,65 @@ class GenerateCodeRequest(BaseModel):
     complexity: str = "mvp"
     architecture: Dict[str, Any] = Field(default_factory=dict)
     persistence: str = ""
+
+
+class ChatTurn(BaseModel):
+    role: str = "user"
+    text: str = ""
+
+
+class ChatAgentRequest(BaseModel):
+    message: str
+    project_id: str = ""
+    current_prompt: str = ""
+    project_memory: Dict[str, Any] = Field(default_factory=dict)
+    feature_state: Dict[str, Any] = Field(default_factory=dict)
+    generated_files: List[Dict[str, Any]] = Field(default_factory=list)
+    routes: List[Dict[str, Any]] = Field(default_factory=list)
+    components: List[Dict[str, Any]] = Field(default_factory=list)
+    system_planner: Dict[str, Any] = Field(default_factory=dict)
+    chat_mode: str = "evolve"
+    reply_preference: str = "balanced"
+    recent_messages: List[ChatTurn] = Field(default_factory=list)
+
+
+class RepoEditRequest(BaseModel):
+    prompt: str
+    current_files: List[Dict[str, Any]] = Field(default_factory=list)
+    app_type: str = ""
+    builder_mode: str = ""
+    style: str = "dark glass"
+    target_scope: str = "fullstack"
+    project_memory: Dict[str, Any] = Field(default_factory=dict)
+    feature_state: Dict[str, Any] = Field(default_factory=dict)
+    system_planner: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceEditRequest(RepoEditRequest):
+    pass
+
+
+class ProjectStateSaveRequest(BaseModel):
+    snapshot: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OrchestrateRequest(BaseModel):
+    prompt: str
+    project_id: Optional[str] = None
+    app_type: str = ""
+    builder_mode: str = ""
+    style: str = "dark glass"
+    routes: List[Dict[str, Any]] = Field(default_factory=list)
+    components: List[Dict[str, Any]] = Field(default_factory=list)
+    current_files: List[Dict[str, Any]] = Field(default_factory=list)
+    system_planner: Dict[str, Any] = Field(default_factory=dict)
+    system_prompt: str = ""
+    project_memory: Dict[str, Any] = Field(default_factory=dict)
+    feature_state: Dict[str, Any] = Field(default_factory=dict)
+    current_layout: Dict[str, Any] = Field(default_factory=dict)
+    active_modules: List[str] = Field(default_factory=list)
+    rv_template_key: str = ""
+    rv_camping_profile: str = ""
 
 
 @app.post("/battery-plan")
@@ -1347,4 +1408,480 @@ def generate_code(payload: GenerateCodeRequest):
             "storage_file": "backend/data_store.py",
         },
         "summary": f"Generated {len(files)} files for a {app_type} in {builder_mode} mode with {persistence} persistence and live data flow.",
+    }
+
+
+PROJECT_STATE_FILE = Path(__file__).with_name("project_state_store.json")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_project_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return f"proj-{stamp}"
+
+
+def load_project_store() -> Dict[str, Any]:
+    if not PROJECT_STATE_FILE.exists():
+        return {"items": {}}
+    try:
+        return json.loads(PROJECT_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"items": {}}
+
+
+def save_project_store(store: Dict[str, Any]) -> None:
+    PROJECT_STATE_FILE.write_text(json.dumps(store, indent=2), encoding="utf-8")
+
+
+def infer_topic(message: str) -> str:
+    text = (message or "").lower()
+    if re.search(r"(builder|this ai|this ia|builder ai|builder ia|chat ui|builder ui|improve the ai|improve the ia|smarter|better|\bia\b|\bai\b)", text):
+        return "builder_ai"
+    if re.search(r"(chat should be live|chat feel live|live chat|reply feedback|in-thread thinking|builder logic|ai logic|ia logic|context memory|repetitive suggestions)", text):
+        return "builder_ai"
+    return "project_app"
+
+
+def build_project_memory(base: Dict[str, Any], message: str, app_type: str, builder_mode: str, systems: List[str], topic: str) -> Dict[str, Any]:
+    memory = dict(base or {})
+    memory.update({
+        "last_user_request": message,
+        "app_type": app_type,
+        "builder_mode": builder_mode,
+        "systems": systems,
+        "current_conversation_topic": topic,
+        "global_knowledge_count": 3,
+    })
+    if topic == "builder_ai":
+        memory.update({
+            "builder_summary": "Current conversation focus is the builder AI itself.",
+            "research_recommendation": None,
+        })
+    return memory
+
+
+def builder_suggestion_actions() -> List[Dict[str, Any]]:
+    return [
+        {
+            "label": "Make preview bigger",
+            "prompt": "improve this builder ui and make the preview larger on the side",
+            "mode": "evolve",
+            "reason": "Shows app changes faster so each improvement is easier to judge.",
+        },
+        {
+            "label": "Simplify builder UI",
+            "prompt": "simplify this builder ui and hide extra details",
+            "mode": "evolve",
+            "reason": "Reduces clutter so the builder feels easier to use.",
+        },
+        {
+            "label": "Improve chat flow",
+            "prompt": "improve this builder chat flow and make actions clearer with fewer repeated cards",
+            "mode": "evolve",
+            "reason": "Keeps the conversation easier to follow and less repetitive.",
+        },
+        {
+            "label": "Make chat feel live",
+            "prompt": "make this builder chat feel live with in-thread thinking feedback and clearer progress",
+            "mode": "evolve",
+            "reason": "Makes the builder feel responsive while it is working instead of only switching button state.",
+        },
+        {
+            "label": "Improve builder logic",
+            "prompt": "improve this builder ai logic with better context memory and less repetitive suggestions",
+            "mode": "evolve",
+            "reason": "Reduces repeated canned replies and keeps builder context sharper across turns.",
+        },
+        {
+            "label": "Shrink header",
+            "prompt": "shrink the header and give more space to chat and preview",
+            "mode": "evolve",
+            "reason": "Creates more working space for the actual builder workflow.",
+        },
+    ]
+
+
+def detect_builder_intent(message: str) -> str:
+    text = (message or "").lower()
+    if re.search(r"(live|real[- ]time|typing|instant|faster|responsive)", text):
+        return "live"
+    if re.search(r"(logic|smarter|smart|brain|context|focus|repetition|repetitive|reason)", text):
+        return "logic"
+    if re.search(r"(preview|canvas|larger|bigger|side)", text):
+        return "preview"
+    if re.search(r"(chat|conversation|composer|reply|actions|cards)", text):
+        return "chat"
+    if re.search(r"(layout|ui|header|panel|clean|simplify)", text):
+        return "layout"
+    return "general"
+
+
+def recent_builder_attempt_tags(recent_messages: List[ChatTurn]) -> List[str]:
+    tags: List[str] = []
+    for item in recent_messages:
+        text = (item.text or "").lower()
+        if "preview" not in tags and re.search(r"(preview|canvas|larger|bigger|side)", text):
+            tags.append("preview")
+        if "chat" not in tags and re.search(r"(chat|conversation|composer|reply|actions|cards)", text):
+            tags.append("chat")
+        if "live" not in tags and re.search(r"(live|real[- ]time|typing|faster|responsive)", text):
+            tags.append("live")
+        if "logic" not in tags and re.search(r"(logic|smarter|context|focus|repetition|repetitive)", text):
+            tags.append("logic")
+        if "layout" not in tags and re.search(r"(layout|ui|header|panel|clean|simplify)", text):
+            tags.append("layout")
+    return tags
+
+
+def prioritize_builder_actions(actions: List[Dict[str, Any]], message: str, recent_messages: List[ChatTurn], project_memory: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    intent = detect_builder_intent(message)
+    tried_tags = recent_builder_attempt_tags(recent_messages)
+    blocked_ids = set()
+
+    def action_identity(action: Dict[str, Any]) -> str:
+        return "::".join([
+            str(action.get("key", "") or ""),
+            str(action.get("cmd", "") or ""),
+            str(action.get("prompt", "") or ""),
+            str(action.get("label", "") or ""),
+        ])
+
+    for field_name in ("applied_builder_action_ids", "avoided_builder_action_ids"):
+        values = project_memory.get(field_name, []) if isinstance(project_memory, dict) else []
+        if isinstance(values, list):
+            blocked_ids.update(str(item) for item in values if item)
+
+    def score(action: Dict[str, Any]) -> int:
+        text = f"{action.get('label', '')} {action.get('prompt', '')}".lower()
+        if action_identity(action) in blocked_ids:
+            return -999
+        value = 0
+        if intent == "live" and re.search(r"(live|thinking|reply|chat)", text):
+            value += 6
+        if intent == "logic" and re.search(r"(logic|context|smart|repetition|chat flow)", text):
+            value += 6
+        if intent == "preview" and re.search(r"(preview|larger|bigger|side)", text):
+            value += 6
+        if intent == "chat" and re.search(r"(chat|composer|actions|cards)", text):
+            value += 6
+        if intent == "layout" and re.search(r"(layout|header|simplify|preview)", text):
+            value += 4
+        if "preview" in tried_tags and re.search(r"(preview|larger|bigger|side)", text):
+            value -= 3
+        if "chat" in tried_tags and re.search(r"(chat|composer|actions|cards)", text):
+            value -= 3
+        if "logic" in tried_tags and re.search(r"(logic|context|smart|repetition)", text):
+            value -= 3
+        if "live" in tried_tags and re.search(r"(live|thinking|reply)", text):
+            value -= 3
+        return value
+
+    return [action for action in sorted(actions, key=score, reverse=True) if score(action) > -999]
+
+
+def build_builder_history_notes(project_memory: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
+    notes: List[Dict[str, str]] = []
+    if not isinstance(project_memory, dict):
+        return notes
+
+    last_applied = str(project_memory.get("last_applied_builder_action_label", "") or "").strip()
+    last_avoided = str(project_memory.get("last_avoided_builder_action_label", "") or "").strip()
+
+    if last_applied:
+        notes.append({
+            "label": "Already applied",
+            "reason": f"{last_applied} is not being suggested again because it was already used in this builder.",
+        })
+
+    if last_avoided:
+        notes.append({
+            "label": "Dismissed earlier",
+            "reason": f"{last_avoided} is being skipped because you already dismissed it.",
+        })
+
+    return notes
+
+
+def build_builder_reply(message: str, recent_messages: List[ChatTurn], actions: List[Dict[str, Any]], project_memory: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    intent = detect_builder_intent(message)
+    tried_tags = recent_builder_attempt_tags(recent_messages)
+    history_notes = build_builder_history_notes(project_memory)
+    tried_suffix = f" Already touched: {', '.join(tried_tags)}." if tried_tags else ""
+
+    if intent == "live":
+        return {
+            "assistant_message": f"The next upgrade should make this chat feel live: show a visible in-thread thinking state, shorten the gap between your action and builder feedback, and keep the next step attached to the exact reply instead of repeating it elsewhere.{tried_suffix}",
+            "status_summary": "Live builder chat plan ready.",
+            "advice": {
+                "cautions": [
+                    {
+                        "label": "Fake live feeling",
+                        "reason": "If the builder only flips the button to Working, the chat still feels static while the request is running.",
+                    }
+                ],
+                "history_notes": history_notes,
+                "better_options": [{"label": item["label"], "reason": item["reason"]} for item in actions[:3]],
+            },
+        }
+
+    if intent == "logic":
+        return {
+            "assistant_message": f"The biggest logic upgrade now is builder context discipline: keep builder requests separate from app-project mutations, vary the reply based on what you already tried, and stop recycling the same suggestion set every turn.{tried_suffix}",
+            "status_summary": "Builder logic upgrade plan ready.",
+            "advice": {
+                "cautions": [
+                    {
+                        "label": "Context bleed",
+                        "reason": "If builder prompts inherit app context, the AI stops improving itself and starts mutating the active project instead.",
+                    }
+                ],
+                "history_notes": history_notes,
+                "better_options": [{"label": item["label"], "reason": item["reason"]} for item in actions[:3]],
+            },
+        }
+
+    if intent == "preview":
+        return {
+            "assistant_message": f"Preview visibility is still the highest-value improvement. The builder is easier to judge when preview gets more width, chat stays readable, and the layout spends less space on secondary chrome.{tried_suffix}",
+            "status_summary": "Preview-first improvement plan ready.",
+            "advice": {
+                "history_notes": history_notes,
+                "better_options": [{"label": item["label"], "reason": item["reason"]} for item in actions[:3]],
+            },
+        }
+
+    if intent == "chat":
+        return {
+            "assistant_message": f"The chat flow still needs cleanup: fewer repeated cards, clearer next actions, and replies that adapt to whether you asked for a suggestion, a direct UI change, or a project mutation.{tried_suffix}",
+            "status_summary": "Chat-flow improvement plan ready.",
+            "advice": {
+                "history_notes": history_notes,
+                "better_options": [{"label": item["label"], "reason": item["reason"]} for item in actions[:3]],
+            },
+        }
+
+    return {
+        "assistant_message": f"Best next builder-AI improvements: keep the builder on builder context, make the chat feel live while it is working, reduce repeated suggestion cards, and rotate toward the next highest-value improvement instead of repeating the same recommendation.{tried_suffix}",
+        "status_summary": "Builder improvement plan ready.",
+        "advice": {
+            "cautions": [
+                {
+                    "label": "Repeated canned replies",
+                    "reason": "If suggestion prompts always return the same fixed copy, the builder sounds static even when the context changed.",
+                }
+            ],
+            "history_notes": history_notes,
+            "better_options": [{"label": item["label"], "reason": item["reason"]} for item in actions[:3]],
+        },
+    }
+
+
+def build_chat_agent_response(payload: ChatAgentRequest) -> Dict[str, Any]:
+    message = payload.message.strip()
+    app_type = payload.feature_state.get("appType") or infer_app_type(payload.current_prompt or message)
+    builder_mode = payload.feature_state.get("builderMode") or infer_builder_mode(payload.current_prompt or message)
+    systems = payload.system_planner.get("systems") or infer_systems(payload.current_prompt or message, app_type)
+    topic = infer_topic(message)
+    actions = builder_suggestion_actions() if topic == "builder_ai" else [
+        {
+            "label": "Add login",
+            "prompt": "add backend auth api and frontend login flow with protected dashboard routes",
+            "mode": "evolve",
+            "reason": "Authentication is a strong next step for a product-style app.",
+        },
+        {
+            "label": "Add saved data",
+            "prompt": "add backend endpoints and frontend saved data flow for reports and history",
+            "mode": "evolve",
+            "reason": "Saved data makes the app more useful between visits.",
+        },
+    ]
+
+    if topic == "builder_ai":
+        ranked_actions = prioritize_builder_actions(actions, message, payload.recent_messages, payload.project_memory)
+        builder_reply = build_builder_reply(message, payload.recent_messages, ranked_actions, payload.project_memory)
+        return {
+            "ok": True,
+            "response_type": "suggest",
+            "assistant_message": builder_reply["assistant_message"],
+            "status_summary": builder_reply["status_summary"],
+            "memory_summary": "Builder AI focus is active.",
+            "ready_to_apply": False,
+            "apply_mode": payload.chat_mode or "evolve",
+            "apply_prompt": message,
+            "questions": [],
+            "suggested_actions": ranked_actions,
+            "advice": builder_reply["advice"],
+            "research_findings": [],
+            "knowledge_hits": [],
+            "research_recommendation": None,
+            "project_memory": build_project_memory(payload.project_memory, message, app_type, builder_mode, systems, topic),
+        }
+
+    ready_to_apply = bool(re.search(r"(build|create|make|add|improve|update|change|fix)", message.lower()))
+    return {
+        "ok": True,
+        "response_type": "apply" if ready_to_apply else "answer",
+        "assistant_message": "I can keep moving this project forward locally.",
+        "status_summary": "Ready to apply locally." if ready_to_apply else "Project-aware answer prepared.",
+        "memory_summary": f"App type: {app_type}. Mode: {builder_mode}.",
+        "ready_to_apply": ready_to_apply,
+        "apply_mode": payload.chat_mode or "evolve",
+        "apply_prompt": message,
+        "questions": [],
+        "suggested_actions": actions,
+        "advice": {
+            "better_options": [{"label": actions[0]["label"], "reason": actions[0]["reason"]}] if actions else [],
+        },
+        "research_findings": [],
+        "knowledge_hits": [],
+        "research_recommendation": None,
+        "project_memory": build_project_memory(payload.project_memory, message, app_type, builder_mode, systems, topic),
+    }
+
+
+def build_edit_payload(prompt: str, app_type: str, builder_mode: str, style: str, target_scope: str, project_memory: Dict[str, Any], workspace_edit: bool) -> Dict[str, Any]:
+    systems = project_memory.get("systems") or infer_systems(prompt, app_type)
+    persistence = infer_persistence(prompt, systems, project_memory.get("complexity", "mvp"))
+    files = generate_code_bundle(prompt, app_type, builder_mode, style, systems, persistence)
+    routes = build_routes(app_type, prompt, systems)
+    components = build_components(app_type, systems)
+    file_tree = build_file_tree(app_type, builder_mode, prompt, systems, persistence)
+    return {
+        "ok": True,
+        "prompt": prompt,
+        "summary": f"Prepared {len(files)} files for {target_scope} changes.",
+        "app_type": app_type,
+        "builder_mode": builder_mode,
+        "target_scope": target_scope,
+        "workspace_edit_enabled": workspace_edit,
+        "changed_file_count": len(files),
+        "written_file_count": len(files) if workspace_edit else 0,
+        "backup_count": 0,
+        "backup_manifest": "",
+        "files": files,
+        "generated_files": files,
+        "routes": routes,
+        "components": components,
+        "file_tree": file_tree,
+        "project_memory": build_project_memory(project_memory, prompt, app_type, builder_mode, systems, infer_topic(prompt)),
+    }
+
+
+@app.get("/knowledge-store")
+def knowledge_store(limit: int = Query(default=8, ge=1, le=50)):
+    items = [
+        {
+            "title": "Keep builder routing separate",
+            "summary": "Builder-AI questions should not inherit active app context.",
+            "topic": "builder ai",
+        },
+        {
+            "title": "Prefer action-first improvements",
+            "summary": "When the user asks to improve the builder, return practical actions and optionally auto-apply them.",
+            "topic": "builder workflow",
+        },
+        {
+            "title": "Avoid repeated suggestion cards",
+            "summary": "Limit repeated generic advice so the chat stays useful.",
+            "topic": "conversation quality",
+        },
+    ][:limit]
+    return {"ok": True, "items": items, "top_topics": ["builder ai", "builder workflow", "conversation quality"]}
+
+
+@app.post("/chat-agent")
+def chat_agent(payload: ChatAgentRequest):
+    return build_chat_agent_response(payload)
+
+
+@app.post("/repo-edit")
+def repo_edit(payload: RepoEditRequest):
+    app_type = payload.app_type or infer_app_type(payload.prompt)
+    builder_mode = payload.builder_mode or infer_builder_mode(payload.prompt)
+    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, False)
+
+
+@app.post("/workspace-edit")
+def workspace_edit(payload: WorkspaceEditRequest):
+    app_type = payload.app_type or infer_app_type(payload.prompt)
+    builder_mode = payload.builder_mode or infer_builder_mode(payload.prompt)
+    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, True)
+
+
+@app.get("/project-state/{project_id}")
+def get_project_state(project_id: str):
+    store = load_project_store()
+    snapshot = store.get("items", {}).get(project_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Project state not found")
+    return {"ok": True, "project_id": project_id, "snapshot": snapshot}
+
+
+@app.put("/project-state/{project_id}")
+def put_project_state(project_id: str, payload: ProjectStateSaveRequest):
+    store = load_project_store()
+    store.setdefault("items", {})[project_id] = payload.snapshot
+    store["items"][project_id]["project_id"] = project_id
+    store["items"][project_id]["updated_at"] = now_iso()
+    save_project_store(store)
+    return {"ok": True, "project_id": project_id}
+
+
+@app.get("/project-states")
+def list_project_states(limit: int = Query(default=12, ge=1, le=100)):
+    store = load_project_store()
+    items = []
+    for project_id, snapshot in store.get("items", {}).items():
+        items.append({
+            "project_id": project_id,
+            "updated_at": snapshot.get("updated_at", ""),
+            "summary": snapshot.get("current_prompt") or snapshot.get("project_id") or project_id,
+            "app_type": snapshot.get("feature_state", {}).get("appType") or snapshot.get("builder_project_memory", {}).get("app_type") or "",
+        })
+    items.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+    return {"ok": True, "items": items[:limit]}
+
+
+@app.post("/orchestrate")
+def orchestrate(payload: OrchestrateRequest):
+    prompt = payload.prompt.strip()
+    project_id = payload.project_id or new_project_id()
+    app_type = payload.app_type or infer_app_type(prompt)
+    builder_mode = payload.builder_mode or infer_builder_mode(prompt)
+    systems = payload.system_planner.get("systems") or infer_systems(prompt, app_type)
+    complexity = payload.system_planner.get("complexity") or "mvp"
+    persistence = infer_persistence(prompt, systems, complexity)
+    routes = payload.routes or build_routes(app_type, prompt, systems)
+    components = payload.components or build_components(app_type, systems)
+    files = generate_code_bundle(prompt, app_type, builder_mode, payload.style or "dark glass", systems, persistence)
+    file_tree = build_file_tree(app_type, builder_mode, prompt, systems, persistence)
+    project_memory = build_project_memory(payload.project_memory, prompt, app_type, builder_mode, systems, infer_topic(prompt))
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "prompt": prompt,
+        "app_type": app_type,
+        "builder_mode": builder_mode,
+        "systems": systems,
+        "complexity": complexity,
+        "persistence": persistence,
+        "layout_changes": build_layout(prompt, payload.current_layout),
+        "module_changes": {"enable": recommend_modules(prompt, app_type), "disable": []},
+        "routes": routes,
+        "components": components,
+        "file_tree": file_tree,
+        "files": files,
+        "generated_files": files,
+        "project_memory": project_memory,
+        "summary": f"Prepared a local orchestration bundle for {app_type}.",
+        "mutation_summary": build_mutation_summary(build_layout(prompt, payload.current_layout), recommend_modules(prompt, app_type), app_type, builder_mode, systems, persistence),
+        "next_best_actions": [
+            {"label": "Generate code", "prompt": prompt, "mode": "evolve", "reason": "Create the next local bundle."},
+            {"label": "Add login", "prompt": f"{prompt} with login and protected routes", "mode": "evolve", "reason": "Authentication is a common next step."},
+        ],
     }
