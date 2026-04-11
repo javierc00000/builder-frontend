@@ -787,7 +787,7 @@ function simplifyInsightMessage(message, hasProject) {
 function isBuilderWorkspaceRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
-  if (/(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder)/.test(text)) return true;
+  if (/(this builder|my builder|builder itself|builder ui|builder screen|builder workspace|chat ui|chat screen|personal ai for my builder|this ai|the ai itself|improve this ai)/.test(text)) return true;
   return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui)/.test(text);
 }
 
@@ -2159,8 +2159,11 @@ export default function App() {
     if (lastBuilderRequest) {
       return "builder ui";
     }
+    if (/(this ai|the ai|builder ai|my builder|this builder|builder ui|chat ui)/i.test(String(builderProjectMemory.last_user_request || ""))) {
+      return "builder ai";
+    }
     return builderProjectMemory.app_type || featureState.appType || "New app";
-  }, [builderProjectMemory.last_builder_workspace_request, builderProjectMemory.app_type, featureState.appType]);
+  }, [builderProjectMemory.last_builder_workspace_request, builderProjectMemory.last_user_request, builderProjectMemory.app_type, featureState.appType]);
   const simpleStatusMessage = useMemo(() => simplifyStatusMessage(statusMessage, Boolean(projectId)), [statusMessage, projectId]);
   const simpleBuilderInsight = useMemo(() => simplifyInsightMessage(builderInsight, Boolean(projectId)), [builderInsight, projectId]);
   const selectedGeneratedCodeFile = useMemo(
