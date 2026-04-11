@@ -4911,12 +4911,12 @@ export default function App() {
         }
         .chat-side-stack { display: grid; gap: 16px; }
         .chat-composer-sticky {
-          position: sticky;
-          top: var(--chat-sticky-top, 14px);
-          z-index: 3;
-          max-height: calc(100vh - var(--chat-sticky-top, 14px) - var(--chat-sticky-gap, 14px));
-          overflow: auto;
-          padding-right: 4px;
+          position: static;
+          top: auto;
+          z-index: auto;
+          max-height: none;
+          overflow: visible;
+          padding-right: 0;
         }
         .chat-conversation-wrap {
           scroll-margin-top: 96px;
@@ -4957,8 +4957,8 @@ export default function App() {
         .chat-live-reply-body {
           white-space: pre-wrap;
           line-height: 1.55;
-          max-height: 180px;
-          overflow: auto;
+          max-height: none;
+          overflow: visible;
         }
         .chat-preview-rail {
           display: grid;
@@ -5008,7 +5008,6 @@ export default function App() {
         .chat-next-actions { display: flex; flex-wrap: wrap; gap: 10px; }
         @media (max-width: 1120px) {
           .chat-builder-shell, .chat-builder-shell.with-preview { grid-template-columns: 1fr; }
-          .chat-composer-sticky { position: static; }
           .chat-preview-rail { position: static; }
           .chat-preview-frame { min-height: 420px; }
         }
