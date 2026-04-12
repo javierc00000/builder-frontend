@@ -1,9 +1,15 @@
 from fastapi import FastAPI, HTTPException, Query
+import requests
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import re
 import json
+import os
+import socket
+import subprocess
+import shutil
+import threading
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -16,10 +22,125 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "https://builder-frontend.javierc00000.workers.dev",
     ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_ROOT = REPO_ROOT / "frontend"
+BACKEND_ROOT = REPO_ROOT / "backend"
+WINDOWS_CREATION_FLAGS = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+
+
+def is_port_open(port: int) -> bool:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.25)
+    try:
+        sock.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def backend_python_executable() -> str:
+    candidate = BACKEND_ROOT / ".venv" / "Scripts" / "python.exe"
+    if candidate.exists():
+        return str(candidate)
+    return "python"
+
+
+def npm_executable() -> str:
+    for name in ("npm.cmd", "npm"):
+        resolved = shutil.which(name)
+        if resolved:
+            return resolved
+    for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
+        if not base:
+            continue
+        candidate = Path(base) / "nodejs" / "npm.cmd"
+        if candidate.exists():
+            return str(candidate)
+    raise HTTPException(status_code=500, detail="Could not find npm to control the frontend dev server")
+
+
+def spawn_detached_process(command: List[str], cwd: Path) -> None:
+    subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=WINDOWS_CREATION_FLAGS,
+    )
+
+
+def run_powershell_script(script: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def stop_process_on_port(port: int) -> str:
+    script = (
+        f'$conn = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue; '
+        'if ($conn) { $pid = $conn | Select-Object -First 1 -ExpandProperty OwningProcess; '
+        'Stop-Process -Id $pid -Force; Write-Output "stopped" } else { Write-Output "not-running" }'
+    )
+    result = run_powershell_script(script)
+    output = (result.stdout or result.stderr or "").strip().lower()
+    return "stopped" if "stopped" in output else "not-running"
+
+
+def start_frontend_dev_server() -> None:
+    if not FRONTEND_ROOT.exists():
+        raise HTTPException(status_code=404, detail="Frontend workspace not found")
+    spawn_detached_process(
+        [npm_executable(), "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
+        FRONTEND_ROOT,
+    )
+
+
+def start_backend_dev_server() -> None:
+    if not BACKEND_ROOT.exists():
+        raise HTTPException(status_code=404, detail="Backend workspace not found")
+    spawn_detached_process(
+        [backend_python_executable(), "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
+        BACKEND_ROOT,
+    )
+
+
+def schedule_backend_restart() -> None:
+    start_script = (
+        f'Start-Sleep -Milliseconds 900; '
+        f'Set-Location "{str(BACKEND_ROOT)}"; '
+        f'& "{backend_python_executable()}" -m uvicorn main:app --host 127.0.0.1 --port 8000'
+    )
+    spawn_detached_process(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", start_script],
+        BACKEND_ROOT,
+    )
+    threading.Timer(0.35, lambda: os._exit(0)).start()
+
+
+def schedule_frontend_restart() -> None:
+    script = (
+        'Start-Sleep -Milliseconds 600; '
+        '$conn = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue; '
+        'if ($conn) { $pid = $conn | Select-Object -First 1 -ExpandProperty OwningProcess; '
+        'Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }; '
+        f'Set-Location "{str(FRONTEND_ROOT)}"; '
+        f'& "{npm_executable()}" run dev -- --host 127.0.0.1 --port 5173'
+    )
+    spawn_detached_process(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        FRONTEND_ROOT,
+    )
 
 
 @app.get("/")
@@ -29,7 +150,15 @@ def home():
 
 @app.get("/health")
 def health():
-  return {"status": "healthy", "service": "builder-backend-v6", "data_flow": True, "workspace_edit": True}
+    return {
+            "status": "healthy",
+            "service": "builder-backend-v6",
+            "data_flow": True,
+            "workspace_edit": True,
+            "dev_control": True,
+            "frontend_running": is_port_open(5173),
+            "backend_running": is_port_open(8000),
+    }
 
 
 class ApplianceItem(BaseModel):
@@ -74,7 +203,6 @@ class ChatTurn(BaseModel):
     text: str = ""
 
 
-class ChatAgentRequest(BaseModel):
     message: str
     project_id: str = ""
     current_prompt: str = ""
@@ -87,10 +215,12 @@ class ChatAgentRequest(BaseModel):
     chat_mode: str = "evolve"
     reply_preference: str = "balanced"
     recent_messages: List[ChatTurn] = Field(default_factory=list)
+    ai_mode: str = "local"  # 'local' or 'gpt'
 
 
 class RepoEditRequest(BaseModel):
     prompt: str
+    project_id: str = ""
     current_files: List[Dict[str, Any]] = Field(default_factory=list)
     app_type: str = ""
     builder_mode: str = ""
@@ -103,6 +233,11 @@ class RepoEditRequest(BaseModel):
 
 class WorkspaceEditRequest(RepoEditRequest):
     pass
+
+
+class DevControlRequest(BaseModel):
+    target: str = "backend"
+    action: str = "restart"
 
 
 class ProjectStateSaveRequest(BaseModel):
@@ -474,18 +609,25 @@ ReactDOM.createRoot(document.getElementById(\"root\")).render(
 """.strip()
 
 
-def root_app_code(app_type: str) -> str:
+def root_app_code(app_type: str, systems: List[str]) -> str:
     page_name = {
         "admin panel": "DashboardPage",
         "assistant app": "AssistantPage",
         "content app": "StudioPage",
         "tool app": "ToolPage",
     }.get(app_type, "ToolPage")
+    auth_imports = ""
+    auth_guard = ""
+    if "auth" in systems:
+        auth_imports = 'import { getToken } from "./lib/auth.js";\nimport { LoginPage } from "./pages/LoginPage.jsx";'
+        auth_guard = '\n  const token = getToken();\n  if (!token) {\n    return <LoginPage />;\n  }\n'
     return f"""
 import React from \"react\";
 import {{ {page_name} }} from \"./pages/{page_name}.jsx\";
+{auth_imports}
 
 export default function App() {{
+{auth_guard}
   return <{page_name} />;
 }}
 """.strip()
@@ -851,37 +993,40 @@ import { signIn } from \"../lib/auth.js\";
 export function LoginPage() {
   const [email, setEmail] = useState(\"\");
   const [password, setPassword] = useState(\"\");
+    const [error, setError] = useState(\"\");
 
-  function handleSubmit() {
-    signIn(email, password);
-  }
+    async function handleSubmit() {
+        try {
+            setError(\"\");
+            # ...existing code...
 
-  return (
-    <div className=\"app-shell\">
-      <section className=\"panel\">
-        <h1>Login</h1>
-        <div className=\"row\">
-          <input className=\"input\" placeholder=\"Email\" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className=\"input\" placeholder=\"Password\" type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button className=\"primary-btn\" onClick={handleSubmit}>Sign in</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-""".strip()
-
-
+# --- GPT Model Selector Endpoint ---
+@app.get("/models")
+def get_models():
+    """
+    Returns a list of available GPT models for the frontend selector.
+    """
 def auth_code() -> str:
-    return """
-export function signIn(email, password) {
-  const token = `demo-token-${email || \"guest\"}`;
-  localStorage.setItem(\"builder_token\", token);
-  return { ok: true, email, token };
+        return {"models": ["gpt-3.5-turbo", "gpt-4", "gpt-4.1", "gpt-5.4"]}
+        headers: { \"Content-Type\": \"application/json\" },
+        body: JSON.stringify({ email, password }),
+    });
+    if (!response.ok) {
+        throw new Error(`Auth error: ${response.status}`);
+    }
+    const data = await response.json();
+    localStorage.setItem(\"builder_token\", data.token || \"\");
+    localStorage.setItem(\"builder_user\", JSON.stringify(data.user || null));
+    return data;
 }
 
 export function getToken() {
   return localStorage.getItem(\"builder_token\") || \"\";
+}
+
+export function signOut() {
+    localStorage.removeItem(\"builder_token\");
+    localStorage.removeItem(\"builder_user\");
 }
 """.strip()
 
@@ -1009,8 +1154,31 @@ def backend_env_example_code(persistence: str) -> str:
     return "\n".join(lines)
 
 
-def backend_api_code(persistence: str) -> str:
+def backend_api_code(persistence: str, systems: List[str]) -> str:
     store_import = "from data_store import list_items, create_item, update_item, delete_item"
+    auth_block = """
+
+class LoginPayload(BaseModel):
+    email: str = ""
+    password: str = ""
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload):
+    email = (payload.email or "guest@example.com").strip() or "guest@example.com"
+    return {
+        "ok": True,
+        "token": f"demo-token-{email}",
+        "user": {"email": email, "role": "member"},
+    }
+
+@app.get("/api/auth/me")
+def auth_me():
+    return {"ok": True, "user": {"email": "demo@example.com", "role": "member"}}
+
+@app.post("/api/auth/logout")
+def logout():
+    return {"ok": True}
+""" if "auth" in systems else ""
     return f'''from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -1032,6 +1200,8 @@ class ItemPayload(BaseModel):
     status: str = "draft"
     value: Any = None
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+{auth_block}
 
 @app.get("/health")
 def health():
@@ -1268,12 +1438,12 @@ uvicorn main:app --reload --port 8000
 def generate_code_bundle(prompt: str, app_type: str, builder_mode: str, style: str, systems: List[str], persistence: str) -> List[Dict[str, Any]]:
     files = [
         {"path": "frontend/src/main.jsx", "language": "javascript", "content": main_jsx()},
-        {"path": "frontend/src/App.jsx", "language": "javascript", "content": root_app_code(app_type)},
+        {"path": "frontend/src/App.jsx", "language": "javascript", "content": root_app_code(app_type, systems)},
         {"path": "frontend/src/styles/app.css", "language": "css", "content": app_css(style)},
         {"path": "frontend/src/lib/api.js", "language": "javascript", "content": api_client_code()},
         {"path": "frontend/package.json", "language": "json", "content": package_json_code()},
         {"path": "frontend/.env.example", "language": "text", "content": vite_env_example_code()},
-        {"path": "backend/main.py", "language": "python", "content": backend_api_code(persistence)},
+        {"path": "backend/main.py", "language": "python", "content": backend_api_code(persistence, systems)},
         {"path": "backend/requirements.txt", "language": "text", "content": backend_requirements_code(persistence)},
         {"path": "backend/.env.example", "language": "text", "content": backend_env_example_code(persistence)},
         {"path": "README.md", "language": "markdown", "content": readme_code(app_type, persistence, systems)},
@@ -1412,6 +1582,8 @@ def generate_code(payload: GenerateCodeRequest):
 
 
 PROJECT_STATE_FILE = Path(__file__).with_name("project_state_store.json")
+WORKSPACE_EXPORT_ROOT = Path(__file__).with_name("workspace_exports")
+WORKSPACE_BACKUP_ROOT = Path(__file__).with_name("workspace_backups")
 
 
 def now_iso() -> str:
@@ -1436,9 +1608,87 @@ def save_project_store(store: Dict[str, Any]) -> None:
     PROJECT_STATE_FILE.write_text(json.dumps(store, indent=2), encoding="utf-8")
 
 
+def sanitize_slug(value: str, fallback: str = "project") -> str:
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", (value or "").strip().lower())
+    cleaned = re.sub(r"-+", "-", cleaned).strip("-")
+    return cleaned or fallback
+
+
+def safe_workspace_relative_path(path_value: str) -> Path:
+    normalized = str(path_value or "").replace("\\", "/").lstrip("/")
+    if not normalized:
+        raise ValueError("Missing file path")
+    relative = Path(normalized)
+    if relative.is_absolute() or any(part == ".." for part in relative.parts):
+        raise ValueError(f"Unsafe workspace path: {path_value}")
+    return relative
+
+
+def materialize_workspace_files(files: List[Dict[str, Any]], project_id: str) -> Dict[str, Any]:
+    project_folder = sanitize_slug(project_id or new_project_id(), "project")
+    target_root = WORKSPACE_EXPORT_ROOT / project_folder
+    backup_root = WORKSPACE_BACKUP_ROOT / f"{project_folder}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    written_count = 0
+    changed_count = 0
+    backup_count = 0
+    backup_entries: List[Dict[str, str]] = []
+
+    for file_entry in files:
+        relative_path = safe_workspace_relative_path(str(file_entry.get("path", "")))
+        destination = target_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        content = str(file_entry.get("content", ""))
+        existing_content = destination.read_text(encoding="utf-8") if destination.exists() else None
+        if existing_content == content:
+            continue
+        if destination.exists():
+            backup_target = backup_root / relative_path
+            backup_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(destination, backup_target)
+            backup_entries.append({"file": relative_path.as_posix(), "backup": backup_target.as_posix()})
+            backup_count += 1
+        destination.write_text(content, encoding="utf-8")
+        written_count += 1
+        changed_count += 1
+
+    backup_manifest = ""
+    if backup_entries:
+        backup_manifest_path = backup_root / "manifest.json"
+        backup_manifest_path.write_text(json.dumps(backup_entries, indent=2), encoding="utf-8")
+        backup_manifest = str(backup_manifest_path)
+
+    return {
+        "target_root": str(target_root),
+        "written_count": written_count,
+        "changed_count": changed_count,
+        "backup_count": backup_count,
+        "backup_manifest": backup_manifest,
+    }
+
+
+def normalize_target_scope(target_scope: str) -> str:
+    text = (target_scope or "fullstack").strip().lower()
+    if text in {"frontend", "ui", "client"}:
+        return "frontend"
+    if text in {"backend", "api", "server"}:
+        return "backend"
+    if text in {"frontend-and-backend", "frontend_backend", "full stack", "full-stack", "both"}:
+        return "fullstack"
+    return "fullstack"
+
+
+def filter_files_for_target_scope(files: List[Dict[str, Any]], target_scope: str) -> List[Dict[str, Any]]:
+    normalized_scope = normalize_target_scope(target_scope)
+    if normalized_scope == "frontend":
+        return [file_entry for file_entry in files if str(file_entry.get("path", "")).startswith("frontend/")]
+    if normalized_scope == "backend":
+        return [file_entry for file_entry in files if str(file_entry.get("path", "")).startswith("backend/")]
+    return files
+
+
 def infer_topic(message: str) -> str:
     text = (message or "").lower()
-    if re.search(r"(builder|this ai|this ia|builder ai|builder ia|chat ui|builder ui|improve the ai|improve the ia|smarter|better|\bia\b|\bai\b)", text):
+    if re.search(r"(builder|this ai|this ia|builder ai|builder ia|chat ui|builder ui|improve the ai|improve the ia|the ai itself|the ia itself|this builder|my builder)", text):
         return "builder_ai"
     if re.search(r"(chat should be live|chat feel live|live chat|reply feedback|in-thread thinking|builder logic|ai logic|ia logic|context memory|repetitive suggestions)", text):
         return "builder_ai"
@@ -1679,7 +1929,53 @@ def build_builder_reply(message: str, recent_messages: List[ChatTurn], actions: 
     }
 
 
+def call_openai_gpt(messages, api_key=None, model="gpt-4"):
+    api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return {"error": "No OpenAI API key set."}
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    data = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 512,
+        "temperature": 0.7,
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=data, timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        return result["choices"][0]["message"]["content"] if "choices" in result and result["choices"] else "(No response)"
+    except Exception as e:
+        return f"[GPT error: {e}]"
+
 def build_chat_agent_response(payload: ChatAgentRequest) -> Dict[str, Any]:
+    # If ai_mode is 'gpt', use OpenAI GPT-4 for chat
+    if getattr(payload, "ai_mode", "local") == "gpt":
+        # Compose chat history for GPT
+        messages = []
+        for turn in payload.recent_messages:
+            role = "assistant" if turn.role == "assistant" else "user"
+            messages.append({"role": role, "content": turn.text})
+        messages.append({"role": "user", "content": payload.message})
+        gpt_reply = call_openai_gpt(messages)
+        return {
+            "ok": True,
+            "response_type": "gpt",
+            "assistant_message": gpt_reply,
+            "status_summary": "OpenAI GPT-4 reply.",
+            "memory_summary": "GPT-4 mode active.",
+            "ready_to_apply": False,
+            "apply_mode": payload.chat_mode or "evolve",
+            "apply_prompt": payload.message,
+            "questions": [],
+            "suggested_actions": [],
+            "advice": {},
+            "research_findings": [],
+            "knowledge_hits": [],
+            "research_recommendation": None,
+            "project_memory": payload.project_memory,
+        }
     message = payload.message.strip()
     app_type = payload.feature_state.get("appType") or infer_app_type(payload.current_prompt or message)
     builder_mode = payload.feature_state.get("builderMode") or infer_builder_mode(payload.current_prompt or message)
@@ -1721,6 +2017,194 @@ def build_chat_agent_response(payload: ChatAgentRequest) -> Dict[str, Any]:
             "project_memory": build_project_memory(payload.project_memory, message, app_type, builder_mode, systems, topic),
         }
 
+    def has_file(pattern: str) -> bool:
+        matcher = re.compile(pattern, re.IGNORECASE)
+        for file_entry in payload.generated_files or []:
+            path = str(file_entry.get("path", "") or "")
+            if matcher.search(path):
+                return True
+        return False
+
+    def is_project_research_request(text: str) -> bool:
+        lowered = (text or "").lower()
+        asks_for_ideas = bool(re.search(r"(search|find|research|ideas|suggest|recommend|recommendation|next ideas|more ideas|best next|what else)", lowered))
+        asks_for_capability = bool(re.search(r"(smarter|smarter app|more capable|more logic|more intelligent|product[- ]ready|stronger|better app)", lowered))
+        asks_for_builder = bool(re.search(r"(builder|chat ui|builder ui|this ai|this ia|builder ai|builder ia)", lowered))
+        return (asks_for_ideas or asks_for_capability) and not asks_for_builder
+
+    def is_yes_reply(text: str) -> bool:
+        return bool(re.fullmatch(r"\s*(yes|yep|ok|sure|go|do it|apply|please do|sounds good|let's go|let's do it|dale|si|sí)\s*", (text or "").strip(), re.IGNORECASE))
+
+    def project_research_actions() -> List[Dict[str, Any]]:
+        action_pool: List[Dict[str, Any]] = []
+        has_auth = "auth" in systems or has_file(r"login|auth")
+        has_billing = "billing" in systems or has_file(r"billing|pricing|subscription|paywall")
+        has_data_history = has_file(r"history|report|data_store|useItems|api\.js")
+        has_onboarding = has_file(r"onboard|welcome|empty|getting-started|tutorial")
+        has_admin = "admin" in systems or has_file(r"admin|role|team")
+        has_ai = any(item in systems for item in ["ai-tools", "ai_tools"]) or has_file(r"assistant|diagnostic|copilot|analysis")
+        has_settings = "settings" in systems or has_file(r"settings|preferences|profile")
+
+        if not has_auth:
+            action_pool.append({
+                "label": "Add authentication",
+                "prompt": "add backend auth api and frontend login flow with protected dashboard routes",
+                "mode": "evolve",
+                "reason": "A smarter app usually needs identity, protected areas, and a way to remember who the user is.",
+                "impact": 10,
+            })
+
+        if not has_data_history:
+            action_pool.append({
+                "label": "Add saved history",
+                "prompt": "add backend endpoints and frontend saved data flow for reports and history",
+                "mode": "evolve",
+                "reason": "Capability grows fast when users can save, revisit, and compare past work instead of starting over each time.",
+                "impact": 9,
+            })
+
+        if not has_onboarding:
+            action_pool.append({
+                "label": "Add onboarding flow",
+                "prompt": "add a guided onboarding flow with empty states, quick-start actions, and first-run tips",
+                "mode": "evolve",
+                "reason": "A capable app should explain itself quickly, especially when the feature set is growing.",
+                "impact": 8,
+            })
+
+        if builder_mode == "battery-planner" and not has_ai:
+            action_pool.append({
+                "label": "Add smart diagnostics assistant",
+                "prompt": "add an ai-assisted diagnostics flow that turns symptoms into likely causes, next checks, and urgency guidance",
+                "mode": "evolve",
+                "reason": "For a diagnostic tool, intelligence should turn raw inputs into guided decisions, not just display data.",
+                "impact": 10,
+            })
+
+        if app_type in {"tool app", "assistant app"} and not has_settings:
+            action_pool.append({
+                "label": "Add user settings",
+                "prompt": "add a settings area for preferences, profile, saved defaults, and notification choices",
+                "mode": "evolve",
+                "reason": "Smart apps feel personalized when they remember defaults and adapt to the user over time.",
+                "impact": 7,
+            })
+
+        if app_type == "admin panel" and not has_admin:
+            action_pool.append({
+                "label": "Add team roles",
+                "prompt": "add team roles, permissions, and admin management screens",
+                "mode": "evolve",
+                "reason": "Admin products become more capable when access rules and team workflows are explicit.",
+                "impact": 8,
+            })
+
+        if not has_billing and app_type in {"assistant app", "admin panel", "content app"}:
+            action_pool.append({
+                "label": "Add monetization path",
+                "prompt": "add a pricing page, plan limits, and backend billing endpoints for subscriptions",
+                "mode": "evolve",
+                "reason": "If this is becoming a real product, monetization and plan control are important next capabilities.",
+                "impact": 6,
+            })
+
+        action_pool.append({
+            "label": "Add analytics and feedback",
+            "prompt": "add product analytics, success metrics, and user feedback capture across the main flow",
+            "mode": "evolve",
+            "reason": "A smarter builder should help the app learn what users do, where they get stuck, and what to improve next.",
+            "impact": 6,
+        })
+
+        keywords = set(re.findall(r"[a-z0-9_-]+", message.lower()))
+
+        def score(action: Dict[str, Any]) -> int:
+            text = f"{action.get('label', '')} {action.get('prompt', '')} {action.get('reason', '')}".lower()
+            value = int(action.get("impact", 0))
+            if any(word in text for word in keywords if len(word) > 3):
+                value += 2
+            if re.search(r"(smarter|capable|logic|intelligent|ideas|research)", message.lower()) and re.search(r"(assistant|smart|diagnostics|history|onboarding|settings)", text):
+                value += 2
+            return value
+
+        ranked = sorted(action_pool, key=score, reverse=True)
+        deduped: List[Dict[str, Any]] = []
+        seen = set()
+        for item in ranked:
+            key = item["label"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped[:5]
+
+    # Auto-apply top research idea if user says yes after a research suggestion
+    if is_yes_reply(message) and payload.project_memory and payload.project_memory.get("research_recommendation"):
+        rec = payload.project_memory["research_recommendation"]
+        # Compose a short explanation for why this is ranked #1
+        explanation = rec.get("explanation") or f"This was chosen as the strongest next upgrade for your {app_type} in {builder_mode} mode."
+        why_block = f"\n\nWhy this is ranked #1:\n{rec.get('reason','') or explanation}"
+        return {
+            "ok": True,
+            "response_type": "apply",
+            "assistant_message": f"Applying: {rec.get('label','Best next move')}\n{rec.get('prompt','')}" + why_block,
+            "status_summary": f"Auto-applying top research idea: {rec.get('label','')}.",
+            "memory_summary": explanation,
+            "ready_to_apply": True,
+            "apply_mode": rec.get("mode", payload.chat_mode or "evolve"),
+            "apply_prompt": rec.get("prompt", ""),
+            "questions": [],
+            "suggested_actions": [rec],
+            "advice": {"why_ranked_1": rec.get("reason", explanation)},
+            "research_findings": [],
+            "knowledge_hits": [],
+            "research_recommendation": rec,
+            "project_memory": payload.project_memory,
+        }
+
+    if is_project_research_request(message):
+        ranked_actions = project_research_actions()
+        top_lines = [
+            f"{index + 1}. {item['label']}: {item['reason']}"
+            for index, item in enumerate(ranked_actions[:3])
+        ]
+        research_recommendation = ranked_actions[0] if ranked_actions else None
+        project_memory = build_project_memory(payload.project_memory, message, app_type, builder_mode, systems, topic)
+        if research_recommendation:
+            project_memory["research_recommendation"] = {
+                "label": research_recommendation.get("label", "Best next move"),
+                "prompt": research_recommendation.get("prompt", ""),
+                "mode": research_recommendation.get("mode", payload.chat_mode or "evolve"),
+                "reason": research_recommendation.get("reason", ""),
+                "explanation": f"Chosen as the strongest next upgrade for this {app_type} in {builder_mode} mode.",
+            }
+        return {
+            "ok": True,
+            "response_type": "suggest",
+            "assistant_message": "Best next upgrades for this app right now:\n" + "\n".join(top_lines) if top_lines else "I reviewed this app and did not find a strong next upgrade yet.",
+            "status_summary": f"Research mode ranked {len(ranked_actions)} project ideas.",
+            "memory_summary": f"App type: {app_type}. Mode: {builder_mode}. Systems: {', '.join(systems[:4]) or 'none yet' }.",
+            "ready_to_apply": False,
+            "apply_mode": payload.chat_mode or "evolve",
+            "apply_prompt": message,
+            "questions": [],
+            "suggested_actions": ranked_actions,
+            "advice": {
+                "better_options": [{"label": item["label"], "reason": item["reason"]} for item in ranked_actions[:3]],
+            },
+            "research_findings": [
+                {
+                    "title": item["label"],
+                    "snippet": item["reason"],
+                    "url": "",
+                }
+                for item in ranked_actions[:4]
+            ],
+            "knowledge_hits": [],
+            "research_recommendation": project_memory.get("research_recommendation"),
+            "project_memory": project_memory,
+        }
+
     ready_to_apply = bool(re.search(r"(build|create|make|add|improve|update|change|fix)", message.lower()))
     return {
         "ok": True,
@@ -1743,25 +2227,38 @@ def build_chat_agent_response(payload: ChatAgentRequest) -> Dict[str, Any]:
     }
 
 
-def build_edit_payload(prompt: str, app_type: str, builder_mode: str, style: str, target_scope: str, project_memory: Dict[str, Any], workspace_edit: bool) -> Dict[str, Any]:
+def build_edit_payload(prompt: str, app_type: str, builder_mode: str, style: str, target_scope: str, project_memory: Dict[str, Any], workspace_edit: bool, project_id: str = "") -> Dict[str, Any]:
     systems = project_memory.get("systems") or infer_systems(prompt, app_type)
     persistence = infer_persistence(prompt, systems, project_memory.get("complexity", "mvp"))
     files = generate_code_bundle(prompt, app_type, builder_mode, style, systems, persistence)
+    normalized_scope = normalize_target_scope(target_scope)
+    scoped_files = filter_files_for_target_scope(files, normalized_scope)
     routes = build_routes(app_type, prompt, systems)
     components = build_components(app_type, systems)
     file_tree = build_file_tree(app_type, builder_mode, prompt, systems, persistence)
+    write_result = materialize_workspace_files(scoped_files, project_id or new_project_id()) if workspace_edit else None
+    summary_text = f"Prepared {len(scoped_files)} files for {normalized_scope} changes."
+    if workspace_edit and write_result:
+        if write_result["written_count"] == 0:
+            summary_text = (
+                f"No file contents changed in {write_result['target_root']}. "
+                "The exported workspace already matched this request."
+            )
+        else:
+            summary_text = f"Prepared and wrote {write_result['written_count']} files to {write_result['target_root']}."
     return {
         "ok": True,
         "prompt": prompt,
-        "summary": f"Prepared {len(files)} files for {target_scope} changes.",
+        "summary": summary_text,
         "app_type": app_type,
         "builder_mode": builder_mode,
-        "target_scope": target_scope,
+        "target_scope": normalized_scope,
         "workspace_edit_enabled": workspace_edit,
-        "changed_file_count": len(files),
-        "written_file_count": len(files) if workspace_edit else 0,
-        "backup_count": 0,
-        "backup_manifest": "",
+        "changed_file_count": write_result["changed_count"] if write_result else len(scoped_files),
+        "written_file_count": write_result["written_count"] if write_result else 0,
+        "backup_count": write_result["backup_count"] if write_result else 0,
+        "backup_manifest": write_result["backup_manifest"] if write_result else "",
+        "workspace_root": write_result["target_root"] if write_result else "",
         "files": files,
         "generated_files": files,
         "routes": routes,
@@ -1802,14 +2299,92 @@ def chat_agent(payload: ChatAgentRequest):
 def repo_edit(payload: RepoEditRequest):
     app_type = payload.app_type or infer_app_type(payload.prompt)
     builder_mode = payload.builder_mode or infer_builder_mode(payload.prompt)
-    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, False)
+    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, False, payload.project_id)
 
 
 @app.post("/workspace-edit")
 def workspace_edit(payload: WorkspaceEditRequest):
     app_type = payload.app_type or infer_app_type(payload.prompt)
     builder_mode = payload.builder_mode or infer_builder_mode(payload.prompt)
-    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, True)
+    return build_edit_payload(payload.prompt, app_type, builder_mode, payload.style or "dark glass", payload.target_scope or "fullstack", payload.project_memory, True, payload.project_id)
+
+
+@app.post("/dev-control")
+def dev_control(payload: DevControlRequest):
+    target = (payload.target or "backend").strip().lower()
+    action = (payload.action or "restart").strip().lower()
+
+    if target not in {"backend", "frontend"}:
+        raise HTTPException(status_code=400, detail="Unsupported dev-control target")
+    if action not in {"start", "restart", "status"}:
+        raise HTTPException(status_code=400, detail="Unsupported dev-control action")
+
+    port = 8000 if target == "backend" else 5173
+    running_before = is_port_open(port)
+
+    if action == "status":
+        return {
+            "ok": True,
+            "target": target,
+            "action": action,
+            "running": running_before,
+            "message": f"{target.capitalize()} is {'running' if running_before else 'stopped'}."
+        }
+
+    if target == "frontend":
+        if action == "restart":
+            schedule_frontend_restart()
+            return {
+                "ok": True,
+                "target": target,
+                "action": action,
+                "running": True,
+                "message": "Frontend restart requested. The dev server should reconnect on port 5173 in a moment.",
+            }
+        if action == "start" and running_before:
+            return {
+                "ok": True,
+                "target": target,
+                "action": action,
+                "running": True,
+                "message": "Frontend is already running on port 5173.",
+            }
+        start_frontend_dev_server()
+        return {
+            "ok": True,
+            "target": target,
+            "action": action,
+            "running": True,
+            "message": f"Frontend {action} requested. The dev server should be available on port 5173 in a moment.",
+        }
+
+    if action == "start" and running_before:
+        return {
+            "ok": True,
+            "target": target,
+            "action": action,
+            "running": True,
+            "message": "Backend is already running on port 8000.",
+        }
+
+    if action == "restart":
+        schedule_backend_restart()
+        return {
+            "ok": True,
+            "target": target,
+            "action": action,
+            "running": True,
+            "message": "Backend restart requested. The API should be back on port 8000 in a moment.",
+        }
+
+    start_backend_dev_server()
+    return {
+        "ok": True,
+        "target": target,
+        "action": action,
+        "running": True,
+        "message": "Backend start requested. The API should be available on port 8000 in a moment.",
+    }
 
 
 @app.get("/project-state/{project_id}")

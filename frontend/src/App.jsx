@@ -1,7 +1,38 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+
+// ModelSelector component for selecting GPT model
+function ModelSelector({ models, selectedModel, onChange }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 16 }}>
+      <span style={{ color: "#93a4bf", fontSize: 13 }}>Model:</span>
+      <select
+        value={selectedModel}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          borderRadius: 8,
+          padding: "6px 12px",
+          fontSize: 14,
+          background: "#0e1a2b",
+          color: "#e5eefc",
+          border: "1px solid #222c3c"
+        }}
+      >
+        {models.map(model => (
+          <option key={model} value={model}>{model}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+// Removed duplicate App component. Merge model selector state and logic into the main exported App below.
 import JSZip from "jszip";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "https://builder-backend-092s.onrender.com").trim().replace(/\/$/, "");
+const DEFAULT_REMOTE_API_BASE = "https://builder-backend-092s.onrender.com";
+const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8000";
+const inferredApiBase = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+  ? DEFAULT_LOCAL_API_BASE
+  : DEFAULT_REMOTE_API_BASE;
+const API_BASE = (import.meta.env.VITE_API_BASE || inferredApiBase).trim().replace(/\/$/, "");
 const STORAGE_KEYS = {
   results: "builder_saved_results_v4",
   commandHistory: "builder_command_history_v4",
@@ -395,13 +426,6 @@ function getRvAffiliateRecommendations(intel, templateKey = "rv_power") {
     cta: index === 0 ? "Featured RV fit" : "Suggested add-on",
   }));
 }
-
-const SIMPLE_STYLE_OPTIONS = ["Dark glass", "Clean SaaS", "Builder Pro", "Minimal"];
-const SIMPLE_GENERATION_STAGES = [
-  "Understanding what you want to build",
-  "Planning the workspace shell",
-  "Generating the first builder version",
-];
 const MUTATION_LOOP_SUGGESTIONS = ["Add dark mode", "Add auth", "Make it mobile friendly", "Add sidebar navigation"];
 const DEFAULT_SIMPLE_DRAFT = {
   starterKey: "assistant",
@@ -677,6 +701,30 @@ function rememberAvoidedBuilderAction(previousMemory, action) {
   };
 }
 
+function rememberBuilderBehaviorChange(previousMemory, change) {
+  const entry = change && typeof change === "object"
+    ? {
+      id: change.id || uid("builder-change"),
+      time: change.time || nowLabel(),
+      label: String(change.label || "Builder behavior update").trim(),
+      summary: String(change.summary || "").trim(),
+      command: String(change.command || "").trim(),
+    }
+    : null;
+
+  if (!entry) return previousMemory || {};
+
+  const previousEntries = Array.isArray(previousMemory?.builder_behavior_changes)
+    ? previousMemory.builder_behavior_changes
+    : [];
+
+  return {
+    ...(previousMemory || {}),
+    builder_behavior_changes: [entry, ...previousEntries].slice(0, 12),
+    last_builder_behavior_change: entry.summary || entry.label,
+  };
+}
+
 function getBuilderHistoryNotes(projectMemory) {
   const notes = [];
   const lastAppliedLabel = String(projectMemory?.last_applied_builder_action_label || "").trim();
@@ -846,7 +894,7 @@ function simplifyInsightMessage(message, hasProject) {
 function isBuilderWorkspaceRequest(message) {
   const text = String(message || "").trim().toLowerCase();
   if (!text) return false;
-  return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|shrink the header|hide project details|improve this builder ui|make this builder chat feel live|in-thread thinking|clearer progress|faster reply feedback)/.test(text);
+  return /(make the preview larger|move the preview|preview on the side|preview to the side|simplify the builder|simplify this ui|simplify this builder ui|hide extra details|simpler builder|shrink the header|hide project details|improve this builder ui|improve this builder chat flow|chat actions clearer|clear next action|composer easier to use|simpler composer|cleaner panels|fewer repeated suggestion cards|make this builder chat feel live|chat should be live|in-thread thinking|clearer progress|faster reply feedback|improve this builder ai logic|improve ia logic|builder logic|context memory|repetitive suggestions|repeated suggestions)/.test(text);
 }
 
 function isBuilderConversationRequest(message) {
@@ -989,6 +1037,14 @@ function buildLiveBuilderPendingState(message) {
   };
 }
 
+function isBuilderActionPrompt(prompt) {
+  const text = String(prompt || "").trim().toLowerCase();
+  if (!text) return false;
+  return isBuilderWorkspaceRequest(text)
+    || isBuilderConversationRequest(text)
+    || /(builder|chat|preview|layout|mobile|header|ui|logic|context|live|thinking|repetitive suggestions|repeated suggestions)/.test(text);
+}
+
 function isBuilderOnlyAssistantMessage(message) {
   if (!message || message.role !== "assistant") return false;
   if (Array.isArray(message.researchFindings) && message.researchFindings.length) return false;
@@ -1033,6 +1089,62 @@ function isFullStackRequest(message) {
   const hasFrontend = /(frontend|ui|screen|page|dashboard|layout|component)/.test(text);
   const hasBackend = /(backend|api|server|database|db|endpoint|auth|saved data)/.test(text);
   return hasFrontend && hasBackend;
+}
+
+function detectWorkspaceAutomationIntent(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return null;
+
+  if (/(rebuild|regenerate|refresh).*(frontend|ui|client|web)|(frontend|ui|client|web).*(rebuild|regenerate|refresh)/.test(text)) {
+    return {
+      targetScope: "frontend",
+      prompt: "rebuild the frontend files for this project using the current app plan and latest ui structure",
+      label: "frontend",
+    };
+  }
+
+  if (/(rebuild|regenerate|refresh).*(backend|api|server)|(backend|api|server).*(rebuild|regenerate|refresh)/.test(text)) {
+    return {
+      targetScope: "backend",
+      prompt: "rebuild the backend files for this project using the current app plan and latest server structure",
+      label: "backend",
+    };
+  }
+
+  if (/(rebuild|regenerate|refresh).*(app|project|everything|full[- ]stack)|(full[- ]stack|whole app|whole project).*(rebuild|regenerate|refresh)/.test(text)) {
+    return {
+      targetScope: "fullstack",
+      prompt: "rebuild the frontend and backend files for this project using the current app plan and latest project structure",
+      label: "project",
+    };
+  }
+
+  return null;
+}
+
+function detectDevControlIntent(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return null;
+
+  if (/(restart|reboot|reload).*(backend|api|server)|(backend|api|server).*(restart|reboot|reload)/.test(text)) {
+    return { target: "backend", action: "restart", label: "backend restart" };
+  }
+  if (/(start|run|launch).*(backend|api|server)|(backend|api|server).*(start|run|launch)/.test(text)) {
+    return { target: "backend", action: "start", label: "backend start" };
+  }
+  if (/(restart|reboot|reload).*(frontend|web|ui)|(frontend|web|ui).*(restart|reboot|reload)/.test(text)) {
+    return { target: "frontend", action: "restart", label: "frontend restart" };
+  }
+  if (/(start|run|launch).*(frontend|web|ui)|(frontend|web|ui).*(start|run|launch)/.test(text)) {
+    return { target: "frontend", action: "start", label: "frontend start" };
+  }
+
+  return null;
+}
+
+function buildInlineActionHint(action) {
+  if (!action?.label) return "";
+  return ` Next step: ${action.label}. Reply "yes apply it" if you want me to run it.`;
 }
 
 function inferBuilderPreferenceTags(message) {
@@ -2107,6 +2219,25 @@ function PreviewCanvas({ layout, activeModules, featureState, result, prompt }) 
 }
 
 export default function App() {
+  // Model selector state
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState("gpt-3.5-turbo");
+
+  // Fetch models from backend
+  useEffect(() => {
+    fetch(`${API_BASE}/models`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.models && Array.isArray(data.models)) {
+          setAvailableModels(data.models);
+          if (!data.models.includes(selectedModel)) {
+            setSelectedModel(data.models[0]);
+          }
+        }
+      })
+      .catch(() => setAvailableModels(["gpt-3.5-turbo"]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_BASE]);
   const [prompt, setPrompt] = useState(() => loadFromStorage(STORAGE_KEYS.prompt, ""));
   const [activeModules, setActiveModules] = useState(() => {
     const stored = loadFromStorage(STORAGE_KEYS.modules, DEFAULT_MODULES);
@@ -2171,6 +2302,7 @@ export default function App() {
   const [previewAuthMode, setPreviewAuthMode] = useState("guest");
   const [mutationLoopInput, setMutationLoopInput] = useState("");
   const [isMutatingGeneratedApp, setIsMutatingGeneratedApp] = useState(false);
+  const [workspaceRebuildTarget, setWorkspaceRebuildTarget] = useState("");
   const [mutationVersions, setMutationVersions] = useState(() => loadFromStorage(STORAGE_KEYS.mutationVersions, []));
   const [systemPlanner, setSystemPlanner] = useState(() =>
     loadFromStorage(
@@ -2270,17 +2402,21 @@ export default function App() {
   }, [projectId, prompt, featureState.appType, featureState.builderMode, systemPlanner.systems, generatedCodeFiles.length, generatedRoutes.length, generatedComponents.length]);
 
   useEffect(() => {
+    let active = true;
+
     async function checkHealth() {
       try {
         const response = await fetch(`${API_BASE}/health`);
         if (!response.ok) throw new Error("health check failed");
         const data = await response.json();
+        if (!active) return;
         setApiStatus("connected");
         setBuilderProjectMemory((prev) => ({
           ...prev,
           workspace_edit_enabled: Boolean(data?.workspace_edit),
         }));
       } catch {
+        if (!active) return;
         setApiStatus("offline");
         setBuilderProjectMemory((prev) => ({
           ...prev,
@@ -2288,7 +2424,20 @@ export default function App() {
         }));
       }
     }
+
+    function handleWindowFocus() {
+      checkHealth();
+    }
+
     checkHealth();
+    const intervalId = window.setInterval(checkHealth, 15000);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -2590,6 +2739,15 @@ export default function App() {
     [generatedCodeFiles, selectedGeneratedFilePath],
   );
   const latestMutationVersion = useMemo(() => mutationVersions[0] || null, [mutationVersions]);
+  const latestBuilderBehaviorChange = useMemo(() => {
+    if (Array.isArray(builderProjectMemory.builder_behavior_changes) && builderProjectMemory.builder_behavior_changes.length) {
+      return builderProjectMemory.builder_behavior_changes[0];
+    }
+    const fallbackSummary = String(builderProjectMemory.last_builder_behavior_change || "").trim();
+    return fallbackSummary
+      ? { label: "Builder behavior updated", summary: fallbackSummary, time: "Just now" }
+      : null;
+  }, [builderProjectMemory.builder_behavior_changes, builderProjectMemory.last_builder_behavior_change]);
 
   const previewRoutes = useMemo(
     () => inferPreviewRoutes(generatedRoutes, generatedCodeFiles, featureState.appType),
@@ -2741,6 +2899,11 @@ export default function App() {
     "Keep chat simple",
     "Hide extra details by default",
     "Prefer mobile-friendly layout",
+    "Show live thinking feedback",
+    "Auto-apply concrete builder improvements",
+    "Keep builder context separate",
+    "Avoid repeated suggestions",
+    "Explain skipped upgrades",
   ], []);
 
   function toggleBuilderAssistantRule(rule) {
@@ -3103,7 +3266,7 @@ export default function App() {
   function scrollChatThreadToNewest(behavior = "smooth") {
     const threadNode = chatThreadRef.current || chatConversationRef.current?.querySelector(".chat-thread");
     if (!threadNode) return;
-    threadNode.scrollTo({ top: 0, behavior });
+    threadNode.scrollTo({ top: threadNode.scrollHeight, behavior });
   }
 
   function jumpToNewestReply() {
@@ -3112,10 +3275,12 @@ export default function App() {
   }
 
   function handleChatThreadScroll(event) {
-    const top = event?.currentTarget?.scrollTop || 0;
-    const nearTop = top <= 72;
-    setIsChatThreadNearTop(nearTop);
-    if (nearTop) {
+    const threadNode = event?.currentTarget;
+    const scrollTop = threadNode?.scrollTop || 0;
+    const scrollBottom = (threadNode?.scrollHeight || 0) - scrollTop - (threadNode?.clientHeight || 0);
+    const nearNewest = scrollBottom <= 72;
+    setIsChatThreadNearTop(nearNewest);
+    if (nearNewest) {
       setHasUnreadAssistantReply(false);
     }
   }
@@ -3154,6 +3319,20 @@ export default function App() {
         }
       });
     }
+  }
+
+  function appendAppliedBuilderChangeMessage(workspaceSummary, label) {
+    const summaryLines = Array.isArray(workspaceSummary?.notes) ? workspaceSummary.notes.filter(Boolean) : [];
+    const text = String(label || workspaceSummary?.command || "Builder change").trim();
+    appendBuilderChatMessage({
+      role: "system",
+      text: `Applied change: ${text}.`,
+      meta: summaryLines.length
+        ? summaryLines.join(" • ")
+        : workspaceSummary?.layout
+          ? `Layout: ${getLayoutLabel(workspaceSummary.layout)}`
+          : "Builder state updated.",
+    });
   }
 
   function dismissPrimaryNextAction() {
@@ -3282,6 +3461,7 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: message,
+        project_id: projectId,
         current_files: generatedCodeFiles,
         app_type: featureState.appType,
         builder_mode: featureState.builderMode,
@@ -3303,6 +3483,7 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: message,
+        project_id: projectId,
         current_files: generatedCodeFiles,
         app_type: featureState.appType,
         builder_mode: featureState.builderMode,
@@ -3316,6 +3497,114 @@ export default function App() {
 
     if (!response.ok) throw new Error("Workspace edit request failed");
     return response.json();
+  }
+
+  async function requestDevControl(target, action) {
+    const response = await fetch(`${API_BASE}/dev-control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target, action }),
+    });
+
+    if (!response.ok) {
+      let detail = "Dev control request failed";
+      try {
+        const errorPayload = await response.json();
+        detail = errorPayload?.detail || errorPayload?.message || detail;
+      } catch {
+        try {
+          const errorText = await response.text();
+          if (errorText) detail = errorText;
+        } catch {
+          // Keep the default detail if the body cannot be read.
+        }
+      }
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+
+  async function handleDevControl(target, action) {
+    const data = await requestDevControl(target, action);
+    appendMutationLog({
+      type: "dev-control",
+      command: `${action} ${target}`,
+      details: data.message || `Requested ${action} for ${target}.`,
+    });
+    appendBuilderChatMessage({
+      role: "system",
+      text: data.message || `Requested ${action} for ${target}.`,
+      meta: `Target: ${data.target || target} • Action: ${data.action || action}`,
+    });
+    setStatusMessage(data.message || `Requested ${action} for ${target}.`);
+    setBuilderInsight(`I handled the ${action} request for the ${target} from chat.`);
+    return data;
+  }
+
+  async function handleWorkspaceRebuild(targetScope, options = {}) {
+    if (!projectId) {
+      setStatusMessage("Build the app first so there is a project to rebuild.");
+      return;
+    }
+
+    if (!generatedCodeFiles.length) {
+      setStatusMessage("Generate the app first before rebuilding exported files.");
+      return;
+    }
+
+    const label = targetScope === "backend"
+      ? "backend"
+      : targetScope === "fullstack"
+        ? "project"
+        : "frontend";
+    const rebuildPrompt = options.prompt || (targetScope === "backend"
+      ? "rebuild the backend files for this project using the current app plan and latest server structure"
+      : targetScope === "fullstack"
+        ? "rebuild the frontend and backend files for this project using the current app plan and latest project structure"
+        : "rebuild the frontend files for this project using the current app plan and latest ui structure");
+
+    try {
+      setWorkspaceRebuildTarget(label);
+      setStatusMessage(`Rebuilding ${label} export...`);
+
+      const data = await requestWorkspaceEdit(rebuildPrompt, targetScope);
+      applyGeneratedProjectPayload(data, {
+        prompt: rebuildPrompt,
+        appType: data.app_type || featureState.appType,
+        builderMode: data.builder_mode || featureState.builderMode,
+        routes: data.routes || generatedRoutes,
+        components: data.components || generatedComponents,
+        fileTree: data.file_tree || generatedFileTree,
+      });
+
+      appendMutationLog({
+        type: "workspace-rebuild",
+        command: label,
+        details: data.summary || `Rebuilt exported ${label} files.`,
+      });
+      appendBuilderChatMessage({
+        role: "system",
+        text: data.summary || `Rebuilt exported ${label} files.`,
+        meta: [
+          data.written_file_count ? `${data.written_file_count} files written` : null,
+          data.workspace_root ? `Path: ${data.workspace_root}` : null,
+          `Scope: ${data.target_scope || label}`,
+        ].filter(Boolean).join(" • "),
+      });
+      setBuilderProjectMemory((prev) => ({
+        ...prev,
+        current_conversation_topic: "project_app",
+        preferred_scope: data.target_scope || targetScope,
+        workspace_edit_enabled: Boolean(data.workspace_edit_enabled),
+        workspace_last_scope: data.target_scope || targetScope,
+        workspace_last_backup_manifest: data.backup_manifest || "",
+      }));
+      setStatusMessage(data.summary || `Rebuilt exported ${label} files.`);
+    } catch (error) {
+      setStatusMessage(`Could not rebuild ${label}: ${error.message}`);
+    } finally {
+      setWorkspaceRebuildTarget("");
+    }
   }
 
   async function requestProjectState(targetProjectId) {
@@ -3430,6 +3719,8 @@ export default function App() {
     const scopedMessage = buildScopedChatMessage(message);
     const isBuilderConversation = isBuilderConversationRequest(message);
     const isBuilderWorkspaceChange = isBuilderWorkspaceRequest(message);
+    const workspaceAutomationIntent = detectWorkspaceAutomationIntent(message);
+    const devControlIntent = detectDevControlIntent(message);
     const prefersAutoApply = builderImprovementMode === "auto" || shouldAutoApplyImprovements(message, chatReplyPreference);
     const applyConfirmation = isApplyConfirmationMessage(message);
 
@@ -3452,6 +3743,19 @@ export default function App() {
       setIsChatSubmitting(true);
       setPendingAssistantReply(buildLiveBuilderPendingState(message));
 
+      if (devControlIntent) {
+        await handleDevControl(devControlIntent.target, devControlIntent.action);
+        return;
+      }
+
+      if (workspaceAutomationIntent && generatedCodeFiles.length) {
+        await handleWorkspaceRebuild(workspaceAutomationIntent.targetScope, {
+          prompt: workspaceAutomationIntent.prompt,
+        });
+        setBuilderInsight(`I handled that ${workspaceAutomationIntent.label} rebuild directly from chat.`);
+        return;
+      }
+
       if (isBuilderWorkspaceChange) {
         const workspaceSummary = applyBuilderWorkspaceCommand(message);
         setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, message));
@@ -3466,6 +3770,7 @@ export default function App() {
             workspaceSummary?.remove?.length ? `Removed: ${workspaceSummary.remove.join(", ")}` : null,
           ].filter(Boolean).join(" • "),
         });
+        appendAppliedBuilderChangeMessage(workspaceSummary, message);
         setBuilderProjectMemory((prev) => ({
           ...rememberAppliedBuilderAction(prev, { prompt: message, label: message }),
           builder_summary: "This chat can help improve the builder UI as well as generated apps.",
@@ -3497,7 +3802,7 @@ export default function App() {
 
         appendBuilderChatMessage({
           role: "assistant",
-          text: suggestionReply.text,
+          text: `${suggestionReply.text}${buildInlineActionHint(suggestionActions[0])}`,
           meta: suggestionReply.meta,
           actions: suggestionActions.slice(0, 4),
           advice: {
@@ -3531,7 +3836,7 @@ export default function App() {
           const autoAction = suggestionActions[0];
           const applyMode = autoAction.mode || resolvedMode;
           const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
-          if (isBuilderWorkspaceRequest(applyPrompt)) {
+          if (isBuilderActionPrompt(applyPrompt)) {
             const workspaceSummary = applyBuilderWorkspaceCommand(applyPrompt);
             setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, applyPrompt));
             setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, autoAction));
@@ -3542,6 +3847,7 @@ export default function App() {
                 ? workspaceSummary.notes.join(" • ")
                 : "Builder workspace improvement applied.",
             });
+            appendAppliedBuilderChangeMessage(workspaceSummary, autoAction.label || applyPrompt);
             setStatusMessage("Builder UI updated.");
             setBuilderInsight(workspaceSummary?.notes?.length
               ? workspaceSummary.notes.join(" ")
@@ -3575,7 +3881,7 @@ export default function App() {
 
         appendBuilderChatMessage({
           role: "assistant",
-          text: "It was still using the current project context, so RV/tool details leaked into a builder-AI question. I am treating this as a builder-only conversation now, not an app request.",
+          text: `It was still using the current project context, so RV/tool details leaked into a builder-AI question. I am treating this as a builder-only conversation now, not an app request.${buildInlineActionHint(builderActions[0])}`,
           meta: "Builder-only focus restored.",
           actions: builderActions.slice(0, 4),
           advice: {
@@ -3609,17 +3915,30 @@ export default function App() {
           const applyMode = autoAction.mode || resolvedMode;
           const applyPrompt = String(autoAction.prompt || scopedMessage).trim();
           setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, autoAction));
-          const summary = applyMode === "mutate"
-            ? await handleGeneratedAppMutation(applyPrompt)
-            : await runBuilderBrain(applyPrompt);
+          if (isBuilderActionPrompt(applyPrompt)) {
+            const workspaceSummary = applyBuilderWorkspaceCommand(applyPrompt);
+            setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, applyPrompt));
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied a builder-focused improvement instead of using the RV project context: ${autoAction.label}.`,
+              meta: workspaceSummary?.notes?.length
+                ? workspaceSummary.notes.join(" • ")
+                : "Builder-focused improvement applied.",
+            });
+            appendAppliedBuilderChangeMessage(workspaceSummary, autoAction.label || applyPrompt);
+          } else {
+            const summary = applyMode === "mutate"
+              ? await handleGeneratedAppMutation(applyPrompt)
+              : await runBuilderBrain(applyPrompt);
 
-          appendBuilderChatMessage({
-            role: "assistant",
-            text: `I applied a builder-focused improvement instead of using the RV project context: ${autoAction.label}.`,
-            meta: summary?.mutationSummary?.length
-              ? summary.mutationSummary.slice(0, 3).join(" • ")
-              : (summary?.builderInsight || "Builder-focused improvement applied."),
-          });
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied a builder-focused improvement instead of using the RV project context: ${autoAction.label}.`,
+              meta: summary?.mutationSummary?.length
+                ? summary.mutationSummary.slice(0, 3).join(" • ")
+                : (summary?.builderInsight || "Builder-focused improvement applied."),
+            });
+          }
         }
         return;
       }
@@ -3629,17 +3948,30 @@ export default function App() {
         const applyMode = action.mode || resolvedMode;
         const applyPrompt = String(action.prompt || scopedMessage).trim();
         setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, action));
-        const summary = applyMode === "mutate"
-          ? await handleGeneratedAppMutation(applyPrompt)
-          : await runBuilderBrain(applyPrompt);
+        if (isBuilderActionPrompt(applyPrompt)) {
+          const workspaceSummary = applyBuilderWorkspaceCommand(applyPrompt);
+          setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, applyPrompt));
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: `Applied your last suggested improvement: ${action.label || "Next improvement"}.`,
+            meta: workspaceSummary?.notes?.length
+              ? workspaceSummary.notes.join(" • ")
+              : "Builder improvement applied.",
+          });
+          appendAppliedBuilderChangeMessage(workspaceSummary, action.label || applyPrompt);
+        } else {
+          const summary = applyMode === "mutate"
+            ? await handleGeneratedAppMutation(applyPrompt)
+            : await runBuilderBrain(applyPrompt);
 
-        appendBuilderChatMessage({
-          role: "assistant",
-          text: `Applied your last suggested improvement: ${action.label || "Next improvement"}.`,
-          meta: summary?.mutationSummary?.length
-            ? summary.mutationSummary.slice(0, 3).join(" • ")
-            : (summary?.builderInsight || "Improvement applied."),
-        });
+          appendBuilderChatMessage({
+            role: "assistant",
+            text: `Applied your last suggested improvement: ${action.label || "Next improvement"}.`,
+            meta: summary?.mutationSummary?.length
+              ? summary.mutationSummary.slice(0, 3).join(" • ")
+              : (summary?.builderInsight || "Improvement applied."),
+          });
+        }
         return;
       }
 
@@ -3679,6 +4011,7 @@ export default function App() {
             meta: [
               repoEditData.changed_file_count ? `${repoEditData.changed_file_count} files updated` : null,
               workspaceWriteUsed ? `${repoEditData.written_file_count || 0} files written to workspace` : "Bundle update only",
+              repoEditData.workspace_root ? `Path: ${repoEditData.workspace_root}` : null,
               `Scope: ${repoEditData.target_scope || targetScope}`,
               repoEditData.backup_count ? `${repoEditData.backup_count} backups saved` : null,
             ].filter(Boolean).join(" • "),
@@ -3706,6 +4039,7 @@ export default function App() {
         agentData?.status_summary || null,
         !agentData?.status_summary ? agentData?.memory_summary || null : null,
         agentData?.ready_to_apply && !agentData?.status_summary ? `Ready to apply with ${agentData.apply_mode || resolvedMode}` : null,
+        !agentData?.ready_to_apply && agentData?.suggested_actions?.[0]?.label ? `Next: ${agentData.suggested_actions[0].label}. Reply "yes apply it" to run it.` : null,
       ].filter(Boolean).join(". ");
 
       appendBuilderChatMessage({
@@ -3725,17 +4059,31 @@ export default function App() {
         if (prefersAutoApply && suggestedAction?.prompt && agentData?.response_type !== "clarify") {
           const applyMode = suggestedAction.mode || resolvedMode;
           const applyPrompt = String(suggestedAction.prompt || scopedMessage).trim();
-          const summary = applyMode === "mutate"
-            ? await handleGeneratedAppMutation(applyPrompt)
-            : await runBuilderBrain(applyPrompt);
+          if (isBuilderActionPrompt(applyPrompt)) {
+            const workspaceSummary = applyBuilderWorkspaceCommand(applyPrompt);
+            setBuilderAssistantPrefs((prev) => updateBuilderAssistantPrefs(prev, applyPrompt));
+            setBuilderProjectMemory((prev) => rememberAppliedBuilderAction(prev, suggestedAction));
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied this improvement now: ${suggestedAction.label || "Suggested improvement"}.`,
+              meta: workspaceSummary?.notes?.length
+                ? workspaceSummary.notes.join(" • ")
+                : "Applied from suggested action.",
+            });
+            appendAppliedBuilderChangeMessage(workspaceSummary, suggestedAction.label || applyPrompt);
+          } else {
+            const summary = applyMode === "mutate"
+              ? await handleGeneratedAppMutation(applyPrompt)
+              : await runBuilderBrain(applyPrompt);
 
-          appendBuilderChatMessage({
-            role: "assistant",
-            text: `I applied this improvement now: ${suggestedAction.label || "Suggested improvement"}.`,
-            meta: summary?.mutationSummary?.length
-              ? summary.mutationSummary.slice(0, 3).join(" • ")
-              : (summary?.builderInsight || "Applied from suggested action."),
-          });
+            appendBuilderChatMessage({
+              role: "assistant",
+              text: `I applied this improvement now: ${suggestedAction.label || "Suggested improvement"}.`,
+              meta: summary?.mutationSummary?.length
+                ? summary.mutationSummary.slice(0, 3).join(" • ")
+                : (summary?.builderInsight || "Applied from suggested action."),
+            });
+          }
           return;
         }
 
@@ -4568,14 +4916,116 @@ export default function App() {
   function applyBuilderWorkspaceCommand(rawCommand) {
     const command = String(rawCommand || prompt).trim();
     if (!command) return null;
+    const lowerCommand = command.toLowerCase();
 
     const { add, remove } = extractModuleMutations(command);
     const layoutMutation = applyLayoutCommand(command, layoutState, activeModules);
+    const behaviorNotes = [];
+    const extraModuleAdds = [];
+    const extraRules = [];
+    const extraFocuses = [];
+
+    if (/(chat should be live|make this builder chat feel live|in-thread thinking|clearer progress|faster reply feedback)/.test(lowerCommand)) {
+      layoutMutation.layout = {
+        ...layoutMutation.layout,
+        mode: "focus",
+        shell: "focus",
+        split: true,
+        sidebar: false,
+        inspector: false,
+        dense: false,
+        previewStyle: "spotlight",
+      };
+      extraModuleAdds.push("live_preview", "quick_actions", "status_panel");
+      extraRules.push("Show live thinking feedback", "Auto-apply concrete builder improvements", "Keep chat simple");
+      extraFocuses.push("chat", "preview", "layout");
+      behaviorNotes.push("Builder chat now favors live in-thread feedback with clearer progress while it is working.");
+      setBuilderImprovementMode("auto");
+      setChatReplyPreference("apply");
+    }
+
+    if (/(improve this builder chat flow|composer easier to use|chat actions clearer|clear next action|simpler composer|cleaner panels|fewer repeated suggestion cards)/.test(lowerCommand)) {
+      layoutMutation.layout = {
+        ...layoutMutation.layout,
+        mode: "workspace",
+        shell: "focus",
+        split: true,
+        sidebar: false,
+        inspector: false,
+        dense: false,
+        previewStyle: "spotlight",
+      };
+      extraModuleAdds.push("quick_actions", "status_panel", "live_preview");
+      extraRules.push("Keep one clear next action", "Reduce repeated suggestion cards", "Keep composer prompts simple");
+      extraFocuses.push("chat", "clarity", "preview");
+      behaviorNotes.push("Builder chat flow now emphasizes one clear next action, a simpler composer, and fewer repeated suggestion cards.");
+      setChatReplyPreference("balanced");
+      setBuilderProjectMemory((prev) => ({
+        ...prev,
+        current_conversation_topic: "builder_ai",
+        builder_summary: "Builder chat flow rules were updated for clearer actions and less repetition.",
+      }));
+    }
+
+    if (/(simplify this builder ui|hide extra details)/.test(lowerCommand)) {
+      layoutMutation.layout = {
+        ...layoutMutation.layout,
+        mode: "focus",
+        shell: "focus",
+        split: true,
+        sidebar: false,
+        inspector: false,
+        dense: false,
+        previewStyle: "spotlight",
+      };
+      extraRules.push("Hide secondary details by default", "Keep the builder focused on the main task");
+      extraFocuses.push("layout", "clarity");
+      behaviorNotes.push("Builder UI now hides extra detail panels first so chat and preview stay easier to scan.");
+      setBuilderProjectMemory((prev) => ({
+        ...prev,
+        current_conversation_topic: "builder_ai",
+        builder_summary: "Builder UI rules were simplified so the main flow stays easier to scan.",
+      }));
+    }
+
+    if (/(improve this builder ai logic|improve ia logic|builder logic|context memory|repetitive suggestions|repeated suggestions)/.test(lowerCommand)) {
+      extraRules.push("Keep builder context separate", "Avoid repeated suggestions", "Explain skipped upgrades");
+      extraFocuses.push("chat", "clarity", "layout");
+      behaviorNotes.push("Builder logic now prioritizes builder-only context, rotates suggestions, and explains why repeated upgrades are skipped.");
+      setBuilderImprovementMode("auto");
+      setChatReplyPreference("balanced");
+      setBuilderProjectMemory((prev) => ({
+        ...prev,
+        current_conversation_topic: "builder_ai",
+        builder_summary: "Builder logic rules were updated for sharper context and less repetition.",
+      }));
+    }
 
     ensureModules(add);
     ensureModules(layoutMutation.moduleAdds);
+    ensureModules(extraModuleAdds);
     removeModules(remove);
     setLayoutState(layoutMutation.layout);
+
+    if (extraRules.length || extraFocuses.length) {
+      setBuilderAssistantPrefs((prev) => ({
+        ...(prev || {}),
+        name: prev?.name || "Builder Copilot",
+        favoriteFocuses: [...new Set([...(Array.isArray(prev?.favoriteFocuses) ? prev.favoriteFocuses : []), ...extraFocuses])].slice(0, 6),
+        recentRequests: [command, ...(Array.isArray(prev?.recentRequests) ? prev.recentRequests : [])].filter(Boolean).slice(0, 4),
+        lastRequest: command,
+        preferredRules: [...new Set([...(Array.isArray(prev?.preferredRules) ? prev.preferredRules : []), ...extraRules])].slice(0, 8),
+        pinnedGoals: Array.isArray(prev?.pinnedGoals) ? prev.pinnedGoals : [],
+      }));
+    }
+
+    if (behaviorNotes.length || extraRules.length || layoutMutation.notes.length) {
+      setBuilderProjectMemory((prev) => rememberBuilderBehaviorChange(prev, {
+        label: behaviorNotes.length ? "Builder behavior updated" : "Builder workspace updated",
+        summary: [...behaviorNotes, ...layoutMutation.notes].join(" ") || "Builder state changed.",
+        command,
+      }));
+    }
 
     if (/(dashboard)/i.test(command)) {
       setFeatureState((prev) => ({ ...prev, appType: "admin panel" }));
@@ -4602,24 +5052,28 @@ export default function App() {
       details: [
         add.length ? `Added modules: ${add.join(", ")}` : null,
         remove.length ? `Removed modules: ${remove.join(", ")}` : null,
+        extraModuleAdds.length ? `Builder modules: ${extraModuleAdds.join(", ")}` : null,
+        extraRules.length ? `Builder rules: ${extraRules.join(", ")}` : null,
         layoutMutation.notes.length ? layoutMutation.notes.join(" | ") : null,
+        behaviorNotes.length ? behaviorNotes.join(" | ") : null,
       ]
         .filter(Boolean)
         .join(" | ") || "No direct mutations matched, but command was logged.",
     });
 
     setBuilderInsight(
-      layoutMutation.notes.length
-        ? layoutMutation.notes.join("\n")
+      [...layoutMutation.notes, ...behaviorNotes].length
+        ? [...layoutMutation.notes, ...behaviorNotes].join("\n")
         : "Command logged. No major layout mutation matched yet."
     );
-    setStatusMessage("Command mutation applied.");
+    setStatusMessage(behaviorNotes.length ? "Builder behavior updated." : "Command mutation applied.");
     return {
       command,
       add,
       remove,
+      behaviorRules: extraRules,
       layout: layoutMutation.layout,
-      notes: layoutMutation.notes,
+      notes: [...layoutMutation.notes, ...behaviorNotes],
     };
   }
 
@@ -5215,6 +5669,7 @@ export default function App() {
         .chat-message { border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.03); display: grid; gap: 8px; }
         .chat-message.user { background: rgba(102,217,239,.08); }
         .chat-message.assistant { background: rgba(139,92,246,.08); }
+        .chat-message.system { background: rgba(34,197,94,.09); border-color: rgba(34,197,94,.22); }
         .chat-message.pending { opacity: .84; border-style: dashed; }
         .chat-meta-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
         .chat-role { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
@@ -5443,6 +5898,14 @@ export default function App() {
           <p>Describe your app, then keep improving it with simple follow-up requests.</p>
         </div>
         <div className="topbar-actions">
+          {/* Model Selector UI - always visible in topbar */}
+          {availableModels.length > 0 && (
+            <ModelSelector
+              models={availableModels}
+              selectedModel={selectedModel}
+              onChange={setSelectedModel}
+            />
+          )}
           <div className="mode-toggle">
             <button className={`ghost-pill ${uiMode === "simple" ? "active" : ""}`} onClick={() => setUiMode("simple")}>Simple</button>
             <button className={`ghost-pill ${uiMode === "chat" ? "active" : ""}`} onClick={() => setUiMode("chat")}>Chat</button>
@@ -5781,6 +6244,14 @@ export default function App() {
                           }
                         }}
                       />
+                      {/* Show selected model in simple builder input row */}
+                      {availableModels.length > 0 && (
+                        <ModelSelector
+                          models={availableModels}
+                          selectedModel={selectedModel}
+                          onChange={setSelectedModel}
+                        />
+                      )}
                       <button className="pill primary" onClick={() => runBuilderBrain()}>
                         Run Builder Brain
                       </button>
@@ -6725,33 +7196,18 @@ export default function App() {
                           : "One chat is active. Describe the app, ask for full-stack work, or say if you want to improve this builder."}
                       </span>
                     </div>
-                    <div className="chat-guidance-strip">
-                      <div className="chat-guidance-tile">
-                        <strong>Current focus</strong>
-                        <div>{currentChatFocusLabel}</div>
-                      </div>
-                      <div className="chat-guidance-tile">
-                        <strong>Best prompt</strong>
-                        <div>
-                          {projectId
-                            ? "Ask for one useful change. You can include app changes, frontend + backend work, or builder improvements in the same chat."
-                            : "Say what you want to build. You can also mention frontend + backend together if you need both."}
-                        </div>
-                      </div>
-                      <div className="chat-guidance-tile">
-                        <strong>How it works</strong>
-                        <div>The chat decides whether your message is about the app, full-stack changes, or this builder.</div>
-                      </div>
+                    <div className="chat-assist-meta" style={{ marginBottom: 12 }}>
+                      Focus: {currentChatFocusLabel}. Use plain language here to build, change, rebuild, restart local services, or improve the builder. If you need something operational, ask for it directly in chat.
                     </div>
                     <textarea
                       className="input"
                       value={builderChatDraft}
                       onChange={(e) => setBuilderChatDraft(e.target.value)}
                       placeholder={projectId
-                        ? "Example: add saved reports and backend endpoints, or improve this builder UI"
+                        ? "Example: add saved reports, rebuild frontend, restart backend, or improve this builder UI"
                         : "Example: build a client portal with frontend dashboard and backend API"}
                     />
-                    {builderAssistantPrefs?.pinnedGoals?.length ? (
+                    {showChatDetails && builderAssistantPrefs?.pinnedGoals?.length ? (
                       <div className="chat-builder-memory">
                         <div>
                           <strong>Saved builder goals</strong>
@@ -6783,6 +7239,42 @@ export default function App() {
                             {builderAssistantPrefs.recentRequests.slice(0, 2).map((item) => (
                               <button key={item} className="chat-chip" type="button" onClick={() => setBuilderChatDraft(item)}>{item}</button>
                             ))}
+                          </div>
+                        ) : null}
+                        {(builderAssistantPrefs.preferredRules || []).length ? (
+                          <div style={{ marginTop: 10 }}>
+                            <div className="muted" style={{ marginBottom: 6 }}>Active builder rules</div>
+                            <div className="chat-chip-row compact">
+                              {builderAssistantPrefs.preferredRules.slice(0, 6).map((rule) => (
+                                <button key={rule} className="chat-chip builder-pref-active" type="button" onClick={() => toggleBuilderAssistantRule(rule)}>
+                                  {rule}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {latestBuilderBehaviorChange ? (
+                          <div className="chat-advice-card" style={{ marginTop: 12, borderColor: "rgba(102, 217, 239, 0.28)", background: "rgba(102, 217, 239, 0.08)" }}>
+                            <div className="muted" style={{ marginBottom: 6 }}>Last applied change</div>
+                            <strong>{latestBuilderBehaviorChange.label || "Builder behavior updated"}</strong>
+                            <div style={{ marginTop: 6 }}>{latestBuilderBehaviorChange.summary}</div>
+                            {latestBuilderBehaviorChange.time ? (
+                              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{latestBuilderBehaviorChange.time}</div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {Array.isArray(builderProjectMemory.builder_behavior_changes) && builderProjectMemory.builder_behavior_changes.length ? (
+                          <div style={{ marginTop: 12 }}>
+                            <div className="muted" style={{ marginBottom: 6 }}>Recent builder changes</div>
+                            <div className="module-list" style={{ gap: 8 }}>
+                              {builderProjectMemory.builder_behavior_changes.slice(0, 3).map((entry) => (
+                                <div key={entry.id || `${entry.time}_${entry.label}`} className="chat-advice-card">
+                                  <strong>{entry.label}</strong>
+                                  <div className="muted">{entry.summary}</div>
+                                  {entry.time ? <div className="muted" style={{ fontSize: 12 }}>{entry.time}</div> : null}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -6826,44 +7318,48 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                    <div className="chat-quick-ideas">
-                      <div className="muted">Conversation style</div>
-                      <div className="chat-chip-row compact">
-                        {[
-                          ["balanced", "Balanced"],
-                          ["answer", "Answer only"],
-                          ["clarify", "Ask questions"],
-                          ["apply", "Apply now"],
-                        ].map(([value, label]) => (
-                          <button
-                            key={value}
-                            className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
-                            type="button"
-                            onClick={() => setChatReplyPreference(value)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="chat-quick-ideas">
-                      <div className="muted">Improvement mode</div>
-                      <div className="chat-chip-row compact">
-                        {[
-                          ["suggest", "Suggest only"],
-                          ["auto", "Suggest + auto-apply"],
-                        ].map(([value, label]) => (
-                          <button
-                            key={value}
-                            className={`chat-chip ${builderImprovementMode === value ? "active" : ""}`}
-                            type="button"
-                            onClick={() => setBuilderImprovementMode(value)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    {showChatDetails ? (
+                      <>
+                        <div className="chat-quick-ideas">
+                          <div className="muted">Conversation style</div>
+                          <div className="chat-chip-row compact">
+                            {[
+                              ["balanced", "Balanced"],
+                              ["answer", "Answer only"],
+                              ["clarify", "Ask questions"],
+                              ["apply", "Apply now"],
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                className={`chat-chip ${chatReplyPreference === value ? "active" : ""}`}
+                                type="button"
+                                onClick={() => setChatReplyPreference(value)}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="chat-quick-ideas">
+                          <div className="muted">Improvement mode</div>
+                          <div className="chat-chip-row compact">
+                            {[
+                              ["suggest", "Suggest only"],
+                              ["auto", "Suggest + auto-apply"],
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                className={`chat-chip ${builderImprovementMode === value ? "active" : ""}`}
+                                type="button"
+                                onClick={() => setBuilderImprovementMode(value)}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="chat-composer-actions">
                       <button className="pill primary" type="button" onClick={() => submitBuilderChatMessage()} disabled={isChatSubmitting}>
                         {isChatSubmitting ? "Working..." : "Go"}
@@ -6919,25 +7415,35 @@ export default function App() {
                 ) : null}
                 <div className="chat-thread" ref={chatThreadRef} onScroll={handleChatThreadScroll}>
                   {renderedBuilderChatHistory.length ? renderedBuilderChatHistory.map((message) => {
+                    const roleLabel = message.role === "user"
+                      ? "You"
+                      : message.role === "system"
+                        ? "Applied"
+                        : "Builder";
+                    const roleDot = message.role === "user"
+                      ? "#66d9ef"
+                      : message.role === "system"
+                        ? "#22c55e"
+                        : "#8b5cf6";
                     return (
                       <div key={message.id} className={`chat-message ${message.role}`}>
                         <div className="chat-meta-row">
                           <div className="chat-role">
-                            <span className="dot" style={{ background: message.role === "user" ? "#66d9ef" : "#8b5cf6" }} />
-                            {message.role === "user" ? "You" : "Builder"}
+                            <span className="dot" style={{ background: roleDot }} />
+                            {roleLabel}
                           </div>
                           <span className="muted">{message.time}</span>
                         </div>
                         <div className="chat-body">{message.text}</div>
                         {message.meta ? <div className="chat-assist-meta">{message.meta}</div> : null}
-                        {Array.isArray(message.questions) && message.questions.length ? (
+                        {showChatDetails && Array.isArray(message.questions) && message.questions.length ? (
                           <div className="chat-question-list">
                             {message.questions.map((question) => (
                               <div key={question} className="chat-question-pill">{question}</div>
                             ))}
                           </div>
                         ) : null}
-                        {message.role === "assistant" && message.advice ? (
+                        {showChatDetails && message.role === "assistant" && message.advice ? (
                           <div className="chat-advice-stack">
                             {Array.isArray(message.advice.upgrades) && !(Array.isArray(message.actions) && message.actions[0]?.reason) ? message.advice.upgrades.map((item) => (
                               <div key={`upgrade_${item.label}`} className="chat-advice-card">
@@ -6965,7 +7471,7 @@ export default function App() {
                             )) : null}
                           </div>
                         ) : null}
-                        {message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
+                        {showChatDetails && message.role === "assistant" && Array.isArray(message.researchFindings) && message.researchFindings.length ? (
                           <div className="chat-advice-stack">
                             {message.researchFindings.slice(0, 4).map((item) => (
                               <a
@@ -6981,7 +7487,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : null}
-                        {message.role === "assistant" && message.researchRecommendation?.prompt ? (
+                        {showChatDetails && message.role === "assistant" && message.researchRecommendation?.prompt ? (
                           <div className="chat-advice-stack">
                             <div className="chat-advice-card">
                               <strong>Why this fits: {message.researchRecommendation.label || "Recommended next move"}</strong>
@@ -6989,7 +7495,7 @@ export default function App() {
                             </div>
                           </div>
                         ) : null}
-                        {message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
+                        {showChatDetails && message.role === "assistant" && Array.isArray(message.knowledgeHits) && message.knowledgeHits.length ? (
                           <div className="chat-advice-stack">
                             {message.knowledgeHits.map((item) => (
                               <a
@@ -7005,7 +7511,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : null}
-                        {message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
+                        {showChatDetails && message.role === "assistant" && Array.isArray(message.actions) && message.actions.length ? (() => {
                           const dismissedAssistantActionId = String(builderProjectMemory.dismissed_assistant_action_id || "").trim();
                           const visibleActions = message.actions.filter((action) => {
                             const actionId = getActionIdentity(action);
@@ -7315,6 +7821,24 @@ export default function App() {
                     <strong>Last update</strong>
                     <div className="muted">{latestOrchestrationEntry?.time || "Waiting"}</div>
                   </div>
+                </div>
+                <div className="chat-chip-row compact">
+                  <button
+                    className="chat-chip"
+                    type="button"
+                    disabled={!generatedCodeFiles.length || Boolean(workspaceRebuildTarget)}
+                    onClick={() => handleWorkspaceRebuild("frontend")}
+                  >
+                    {workspaceRebuildTarget === "frontend" ? "Rebuilding frontend..." : "Rebuild frontend"}
+                  </button>
+                  <button
+                    className="chat-chip"
+                    type="button"
+                    disabled={!generatedCodeFiles.length || Boolean(workspaceRebuildTarget)}
+                    onClick={() => handleWorkspaceRebuild("backend")}
+                  >
+                    {workspaceRebuildTarget === "backend" ? "Rebuilding backend..." : "Rebuild backend"}
+                  </button>
                 </div>
                 {previewRoutes.length ? (
                   <div className="chat-chip-row compact">
